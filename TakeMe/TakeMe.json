@@ -1,0 +1,8 @@
+{
+    "Author": "xan",
+    "Name": "TakeMe",
+    "Punchline": "Helpers for navigation",
+    "Description": "Save and navigate to waypoints throughout the world",
+    "ApplicableVersion": "any",
+    "Tags": ["target", "combat"]
+}
