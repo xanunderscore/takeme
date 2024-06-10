@@ -1,13 +1,14 @@
-﻿using System;
-using System.Collections.Generic;
-using System.IO;
-using System.Linq;
-using System.Numerics;
+using Dalamud.Game.ClientState.Conditions;
 using Dalamud.Game.Command;
 using Dalamud.Interface.Windowing;
 using Dalamud.IoC;
 using Dalamud.Plugin;
 using Dalamud.Plugin.Services;
+using FFXIVClientStructs.FFXIV.Client.Game;
+using System;
+using System.Collections.Generic;
+using System.Linq;
+using System.Numerics;
 
 namespace TakeMe;
 
@@ -20,7 +21,8 @@ public sealed class Plugin : IDalamudPlugin
     public readonly WindowSystem WindowSystem = new("TakeMe");
     private readonly ConfigWindow configWindow;
     private readonly Overlay overlayWindow;
-    private readonly Zodiac zodiacWindow;
+    private readonly Queue<(Vector3 destination, bool fly)> nextDestination = [];
+    private Vector3? highlightDestination = null;
 
     private static readonly List<(string, string)> HelpCommands =
     [
@@ -35,18 +37,18 @@ public sealed class Plugin : IDalamudPlugin
     public Plugin([RequiredVersion("1.0")] DalamudPluginInterface pluginInterface)
     {
         pluginInterface.Create<Service>();
-        Service.Init();
+        Service.Init(this);
 
         var helpmess = "Open configuration\n";
         foreach ((var args, var desc) in HelpCommands)
             helpmess += $"/{Name} {args} → {desc}\n";
 
+        Camera.Instance = new();
+
         Service.CommandManager.AddHandler(CommandName, new CommandInfo(OnCommand) { HelpMessage = helpmess });
-        zodiacWindow = new Zodiac();
         configWindow = new ConfigWindow();
         overlayWindow = new Overlay();
 
-        WindowSystem.AddWindow(zodiacWindow);
         WindowSystem.AddWindow(configWindow);
         WindowSystem.AddWindow(overlayWindow);
 
@@ -59,15 +61,62 @@ public sealed class Plugin : IDalamudPlugin
         {
             overlayWindow.IsOpen = true;
         };
+        Service.Framework.Update += Tick;
     }
 
     public void Dispose()
     {
+        Service.Framework.Update -= Tick;
         WindowSystem.RemoveAllWindows();
 
         Service.CommandManager.RemoveHandler(CommandName);
 
         Service.Config.Save();
+    }
+
+    private void Tick(IFramework framework)
+    {
+        if (nextDestination.TryPeek(out var nextDest))
+        {
+            (var dest, var forceFly) = nextDest;
+            var playerPos = Service.Player!.Position;
+
+            var wantMount = forceFly || Vector3.Distance(dest, playerPos) > 20f;
+
+            if (wantMount && WaitMount())
+                return;
+
+            nextDestination.Dequeue();
+
+            Service.Log.Debug($"pathfind from {playerPos} -> {dest}");
+            Service
+                .IPC
+                .PathfindAndMoveTo(
+                    dest,
+                    Service.Condition[ConditionFlag.InFlight] || Service.Condition[ConditionFlag.Jumping] || forceFly
+                );
+        }
+    }
+
+    private static unsafe bool WaitMount()
+    {
+        if (Service.Condition[ConditionFlag.Mounted])
+            return false;
+
+        if (Service.Condition[ConditionFlag.Casting] || Service.Condition[ConditionFlag.Unknown57])
+            return true; // wait for cast to end
+
+        if (ActionManager.Instance()->GetActionStatus(ActionType.GeneralAction, 9) != 0)
+            return false; // can't mount here
+
+        ActionManager.Instance()->UseAction(ActionType.GeneralAction, 9);
+
+        return true;
+    }
+
+    internal void Goto(Vector3 destination, bool forceFly = false)
+    {
+        nextDestination.Enqueue((destination, forceFly));
     }
 
     private void OnCommand(string command, string args)
@@ -104,13 +153,13 @@ public sealed class Plugin : IDalamudPlugin
         }
     }
 
-    public static void MoveTarget(string name)
+    public void MoveTarget(string name)
     {
         if (!TryMoveTarget(name))
             Service.Toast.ShowError("No target found with that name.");
     }
 
-    public static bool TryMoveTarget(string name)
+    public bool TryMoveTarget(string name)
     {
         var nearest = Service
             .ObjectTable
@@ -119,15 +168,13 @@ public sealed class Plugin : IDalamudPlugin
             )
             .MinBy(x => (x.Position - Service.Player!.Position).Length());
         if (nearest == null)
-        {
             return false;
-        }
 
-        Service.IPC.PathfindAndMoveTo(nearest.Position, false);
+        Goto(nearest.Position);
         return true;
     }
 
-    public static void MoveWaypoint(string label)
+    public void MoveWaypoint(string label)
     {
         var wp = Service.Config.Waypoints.FirstOrDefault(x => x.Label == label);
         if (wp == null)
@@ -136,10 +183,10 @@ public sealed class Plugin : IDalamudPlugin
             return;
         }
 
-        Service.IPC.PathfindAndMoveTo(wp.Position, false);
+        Goto(wp.Position);
     }
 
-    public static void MoveWaypoint(Waypoint wp) => Service.IPC.PathfindAndMoveTo(wp.Position, false);
+    public void MoveWaypoint(Waypoint wp) => Goto(wp.Position);
 
     public static void NewWaypoint(string label)
     {
@@ -197,6 +244,20 @@ public sealed class Plugin : IDalamudPlugin
 
     private void DrawUI()
     {
+        Camera.Instance?.Update();
         WindowSystem.Draw();
+        if (highlightDestination != null)
+        {
+            Camera.Instance?.DrawWorldLine(Service.Player!.Position, highlightDestination.Value, 0xff00ff00);
+        }
+        Camera.Instance?.DrawWorldPrimitives();
+    }
+
+    internal void HighlightDestination(Vector3 dest)
+    {
+        if (highlightDestination == dest)
+            highlightDestination = null;
+        else
+            highlightDestination = dest;
     }
 }

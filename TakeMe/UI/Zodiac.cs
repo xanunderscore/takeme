@@ -1,48 +1,54 @@
-using System;
-using System.Collections.Generic;
-using System.Linq;
 using Dalamud.Game.Text.SeStringHandling.Payloads;
 using Dalamud.Interface;
 using Dalamud.Interface.Components;
-using Dalamud.Interface.Utility;
-using Dalamud.Interface.Windowing;
 using ImGuiNET;
 using Lumina.Excel.GeneratedSheets;
-using TakeMe;
+using System;
+using System.Collections.Generic;
+using System.Linq;
 using Ui = FFXIVClientStructs.FFXIV.Client.Game.UI;
 
 namespace TakeMe;
 
-public class Zodiac : Window
+internal class Zodiac
 {
-    public Zodiac()
-        : base("Zodiac tracker", ImGuiWindowFlags.NoCollapse)
-    {
-        IsOpen = true;
-    }
-
     private unsafe RelicNote Book => Service.ExcelRow<RelicNote>(Manager->RelicNoteID)!;
     private static unsafe Ui.RelicNote* Manager => Ui.RelicNote.Instance();
 
-    public override unsafe bool DrawConditions() => Book.RowId > 0;
-
-    public override void Draw()
+    public unsafe bool Active
     {
+        get
+        {
+            if (Book.UnkData25[0].Fate == 0)
+                return false;
+            for (var i = 0; i < 10; i++)
+                if (Manager->MonsterProgress[i] != 3)
+                    return true;
+            return Book.RowId > 0 && Manager->ObjectiveProgress != 1015;
+        }
+    }
+
+    public unsafe void Draw()
+    {
+        var totalRows = 0;
         var data = GetBookMapData();
 
         var tt = Service.ClientState.TerritoryType;
         if (data.Contains(tt))
-            DisplayZone(tt, data[tt]);
+            totalRows += DisplayZone(tt, data[tt]);
 
         foreach (var k in data)
         {
             if (k.Key == tt)
                 continue;
-            DisplayZone(k.Key, k);
+            totalRows += DisplayZone(k.Key, k);
         }
+
+        if (totalRows == 0)
+            ImGui.Text("Book complete!");
     }
 
-    private static void DisplayZone(uint key, IEnumerable<Objective> objectives)
+    private static int DisplayZone(uint key, IEnumerable<Objective> objectives)
     {
         var i = 0;
         var headerShown = false;
@@ -53,32 +59,22 @@ public class Zodiac : Window
             else
             {
                 if (!headerShown)
-                {
-                    ImGui.PushStyleColor(ImGuiCol.Text, 0xff888888);
-                    ImGui.Text(Service.ExcelRow<TerritoryType>(key)?.PlaceName.Value?.Name ?? "<unknown>");
-                    ImGui.PopStyleColor();
-                }
+                    ImGui.TextDisabled(Service.ExcelRow<TerritoryType>(key)?.PlaceName.Value?.Name ?? "<unknown>");
                 headerShown = true;
             }
             if (j.Icon > 0)
-            {
-                var icon = Service.TextureProvider.GetIcon(j.Icon);
-                if (icon != null)
-                {
-                    ImGui.Image(icon.ImGuiHandle, new(32, 32));
-                    ImGui.SameLine();
-                }
-            }
+                Utils.Icon(j.Icon, new(32, 32));
             ImGui.Text(j.Name);
             ImGui.SameLine();
             if (ImGuiComponents.IconButton($"###{key}-{i++}", FontAwesomeIcon.Play))
             {
-                if (j.Type == "Mob" && Plugin.TryMoveTarget(j.Name))
+                if (j.Type == "Mob" && Service.Plugin.TryMoveTarget(j.Name))
                     break;
 
                 Service.GameGui.OpenMapWithMapLink(j.Location);
             }
         }
+        return i;
     }
 
     private struct Objective
@@ -97,6 +93,7 @@ public class Zodiac : Window
         var i = 0;
         foreach (var notefate in Book.UnkData25)
         {
+            if (notefate.Fate == 0) continue;
             var fate = Service.ExcelRow<Fate>(notefate.Fate)!;
             objectives.Add(
                 new Objective()
@@ -105,7 +102,7 @@ public class Zodiac : Window
                     Type = "FATE",
                     Name = fate.Name,
                     Complete = Manager->IsFateComplete(i++),
-                    Icon = fate.IconObjective
+                    Icon = fate.IconMap
                 }
             );
         }
@@ -113,6 +110,7 @@ public class Zodiac : Window
         i = 0;
         foreach (var mon in Book.UnkData1)
         {
+            if (mon.MonsterNoteTargetCommon == 0) continue;
             var monster = Service.ExcelRow<MonsterNoteTarget>(mon.MonsterNoteTargetCommon);
             objectives.Add(
                 new Objective()
@@ -130,10 +128,11 @@ public class Zodiac : Window
         foreach (var m in Book.MonsterNoteTargetNM)
         {
             var monster = m.Value!;
+            if (monster.RowId == 0) continue;
             objectives.Add(
                 new Objective()
                 {
-                    Location = GetMonsterPosition(monster!.RowId),
+                    Location = GetMonsterPosition(monster.RowId),
                     Type = "Dungeon",
                     Name = monster.BNpcName.Value!.Singular.ToString(),
                     Complete = Manager->IsDungeonComplete(i++),
@@ -145,14 +144,10 @@ public class Zodiac : Window
         i = 0;
         foreach (var leve in Book.Leve)
         {
+            if (leve.Value!.RowId == 0) continue;
             var ass = leve.Value!.LeveAssignmentType.Value!;
-            var icon = 71241u; // generic leve icon
             var name = leve.Value!.Name.ToString();
-            if (ass.Name != "Battlecraft")
-            {
-                name += $" ({ass.Name})";
-                icon = (uint)ass.Icon;
-            }
+            var icon = ass.Name == "Battlecraft" ? 71241u : (uint)ass.Icon;
 
             objectives.Add(
                 new Objective()
@@ -182,7 +177,7 @@ public class Zodiac : Window
             486 => new MapLinkPayload(155, 53, 10.0f, 28.0f), // Tower of Power             // Coerthas Central Highlands
             493 => new MapLinkPayload(155, 53, 5.0f, 22.0f), // The Taste of Fear          // Coerthas Central Highlands
             499 => new MapLinkPayload(155, 53, 34.0f, 20.0f), // The Four Winds             // Coerthas Central Highlands
-            516 => new MapLinkPayload(156, 25, 15.0f, 13.0f), // Black and Nburu            // Mor Dhona
+            516 => new MapLinkPayload(156, 25, 15.5f, 14.2f), // Black and Nburu            // Mor Dhona
             517 => new MapLinkPayload(156, 25, 13.0f, 12.0f), // Good to Be Bud             // Mor Dhona
             521 => new MapLinkPayload(156, 25, 31.0f, 5.0f), // Another Notch on the Torch // Mor Dhona
             540 => new MapLinkPayload(145, 22, 26.0f, 24.0f), // Quartz Coupling            // Eastern Thanalan
@@ -216,7 +211,7 @@ public class Zodiac : Window
             358 => new MapLinkPayload(155, 53, 13.8f, 27.0f), // giant logger            // Coerthas Central Highlands
             359 => new MapLinkPayload(138, 18, 17.7f, 16.3f), // shoalspine Sahagin      // Western La Noscea
             360 => new MapLinkPayload(156, 25, 11.0f, 15.1f), // 5th Cohort vanguard     // Mor Dhona
-            361 => new MapLinkPayload(180, 30, 23.9f, 7.7f), // synthetic doblyn        // Outer La Noscea
+            361 => new MapLinkPayload(180, 30, 23.2f, 8.8f), // synthetic doblyn        // Outer La Noscea
             362 => new MapLinkPayload(140, 20, 11.0f, 6.2f), // 4th Cohort hoplomachus  // Western Thanalan
             363 => new MapLinkPayload(146, 23, 21.5f, 25.2f), // Zanr'ak pugilist        // Southern Thanalan
             364 => new MapLinkPayload(147, 24, 22.1f, 26.6f), // basilisk                // Northern Thanalan
@@ -229,14 +224,14 @@ public class Zodiac : Window
             371 => new MapLinkPayload(152, 5, 24.2f, 16.9f), // milkroot cluster        // East Shroud
             372 => new MapLinkPayload(138, 18, 13.8f, 16.9f), // shelfscale Reaver       // Western La Noscea
             373 => new MapLinkPayload(146, 23, 26.1f, 21.1f), // Zahar'ak archer         // Southern Thanalan
-            374 => new MapLinkPayload(180, 30, 23.9f, 7.7f), // U'Ghamaro golem         // Outer La Noscea
+            374 => new MapLinkPayload(180, 30, 23.2f, 8.8f), // U'Ghamaro golem         // Outer La Noscea
             375 => new MapLinkPayload(155, 53, 33.9f, 21.6f), // Natalan boldwing        // Coerthas Central Highlands
             376 => new MapLinkPayload(153, 6, 30.8f, 24.8f), // wild hog                // South Shroud
             377 => new MapLinkPayload(156, 25, 17.0f, 16.0f), // hexing harrier          // Mor Dhona
             378 => new MapLinkPayload(155, 53, 13.8f, 27.0f), // giant lugger            // Coerthas Central Highlands
             379 => new MapLinkPayload(146, 23, 21.9f, 18.7f), // tempered orator         // Southern Thanalan
             380 => new MapLinkPayload(156, 25, 29.6f, 14.3f), // gigas bonze             // Mor Dhona
-            381 => new MapLinkPayload(180, 30, 23.9f, 7.7f), // U'Ghamaro roundsman     // Outer La Noscea
+            381 => new MapLinkPayload(180, 30, 23.2f, 8.8f), // U'Ghamaro roundsman     // Outer La Noscea
             382 => new MapLinkPayload(152, 5, 25.7f, 13.3f), // sylph bonnet            // East Shroud
             383 => new MapLinkPayload(138, 18, 13.4f, 16.9f), // shelfclaw Reaver        // Western La Noscea
             384 => new MapLinkPayload(146, 23, 26.1f, 21.1f), // Zahar'ak fortune-teller // Southern Thanalan
@@ -246,7 +241,7 @@ public class Zodiac : Window
             388 => new MapLinkPayload(146, 23, 18.9f, 22.9f), // Amalj'aa lancer         // Southern Thanalan
             389 => new MapLinkPayload(156, 25, 25.3f, 10.9f), // lake cobra              // Mor Dhona
             390 => new MapLinkPayload(155, 53, 13.8f, 27.0f), // giant reader            // Coerthas Central Highlands
-            391 => new MapLinkPayload(180, 30, 23.9f, 7.7f), // U'Ghamaro quarryman     // Outer La Noscea
+            391 => new MapLinkPayload(180, 30, 23.2f, 8.8f), // U'Ghamaro quarryman     // Outer La Noscea
             392 => new MapLinkPayload(152, 5, 24.6f, 11.2f), // Sylphlands sentinel     // East Shroud
             393 => new MapLinkPayload(138, 18, 14.4f, 17.0f), // sea wasp                // Western La Noscea
             394 => new MapLinkPayload(147, 24, 18.0f, 16.9f), // magitek vanguard        // Northern Thanalan
@@ -256,7 +251,7 @@ public class Zodiac : Window
             398 => new MapLinkPayload(156, 25, 11.4f, 12.9f), // 5th Cohort hoplomachus  // Mor Dhona
             399 => new MapLinkPayload(155, 53, 13.8f, 30.5f), // snow wolf               // Coerthas Central Highlands
             400 => new MapLinkPayload(153, 6, 33.3f, 23.7f), // ked                     // South Shroud
-            401 => new MapLinkPayload(180, 30, 23.9f, 7.7f), // U'Ghamaro bedesman      // Outer La Noscea
+            401 => new MapLinkPayload(180, 30, 23.2f, 8.8f), // U'Ghamaro bedesman      // Outer La Noscea
             402 => new MapLinkPayload(138, 18, 13.4f, 16.9f), // shelfeye Reaver         // Western La Noscea
             403 => new MapLinkPayload(140, 20, 11.0f, 6.2f), // 4th Cohort laquearius   // Western Thanalan
             404 => new MapLinkPayload(156, 25, 33.4f, 15.2f), // gigas bhikkhu           // Mor Dhona
@@ -266,7 +261,7 @@ public class Zodiac : Window
             408 => new MapLinkPayload(156, 25, 11.4f, 12.9f), // 5th Cohort laquearius   // Mor Dhona
             409 => new MapLinkPayload(156, 25, 28.9f, 13.6f), // gigas sozu              // Mor Dhona
             410 => new MapLinkPayload(154, 7, 20.2f, 19.6f), // Ixali windtalon         // North Shroud
-            411 => new MapLinkPayload(180, 30, 23.9f, 7.7f), // U'Ghamaro priest        // Outer La Noscea
+            411 => new MapLinkPayload(180, 30, 23.2f, 8.8f), // U'Ghamaro priest        // Outer La Noscea
             412 => new MapLinkPayload(140, 20, 11.0f, 6.2f), // 4th Cohort secutor      // Western Thanalan
             413 => new MapLinkPayload(155, 53, 33.9f, 21.6f), // Natalan watchwolf       // Coerthas Central Highlands
             414 => new MapLinkPayload(152, 5, 24.6f, 11.2f), // violet screech          // East Shroud
@@ -278,7 +273,7 @@ public class Zodiac : Window
             420 => new MapLinkPayload(156, 25, 28.7f, 6.9f), // hippogryph              // Mor Dhona
             421 => new MapLinkPayload(138, 18, 20.4f, 19.1f), // trenchtooth Sahagin     // Western La Noscea
             422 => new MapLinkPayload(155, 53, 33.9f, 21.6f), // Natalan windtalon       // Coerthas Central Highlands
-            423 => new MapLinkPayload(180, 30, 23.9f, 7.7f), // elite roundsman         // Outer La Noscea
+            423 => new MapLinkPayload(180, 30, 23.2f, 8.8f), // elite roundsman         // Outer La Noscea
             424 => new MapLinkPayload(147, 24, 24.8f, 20.8f), // ahriman                 // Northern Thanalan
             427 => new MapLinkPayload(156, 25, 11.4f, 12.9f), // 5th Cohort signifer     // Mor Dhona
             425 => new MapLinkPayload(137, 17, 29.5f, 20.8f), // 2nd Cohort secutor      // Eastern La Noscea
@@ -287,17 +282,17 @@ public class Zodiac : Window
             429 => new MapLinkPayload(154, 7, 20.2f, 19.6f), // watchwolf               // North Shroud
             430 => new MapLinkPayload(146, 23, 18.9f, 22.9f), // Amalj'aa archer         // Southern Thanalan
             431 => new MapLinkPayload(140, 20, 10.2f, 6.0f), // 4th Cohort signifer     // Western Thanalan
-            432 => new MapLinkPayload(146, 23, 31.1f, 19.5f), // Zahar'ak battle drake   // Southern Thanalan
+            432 => new MapLinkPayload(146, 23, 31.1f, 18.5f), // Zahar'ak battle drake   // Southern Thanalan
             433 => new MapLinkPayload(138, 18, 16.3f, 14.9f), // Sapsa shelftooth        // Western La Noscea
             434 => new MapLinkPayload(155, 53, 33.9f, 21.6f), // Natalan fogcaller       // Coerthas Central Highlands
-            435 => new MapLinkPayload(180, 30, 23.9f, 7.7f), // elite priest            // Outer La Noscea
+            435 => new MapLinkPayload(180, 30, 23.2f, 8.8f), // elite priest            // Outer La Noscea
             436 => new MapLinkPayload(146, 23, 18.9f, 22.9f), // Amalj'aa scavenger      // Southern Thanalan
             437 => new MapLinkPayload(156, 25, 11.4f, 12.9f), // 5th Cohort secutor      // Mor Dhona
             438 => new MapLinkPayload(154, 7, 20.2f, 19.6f), // Ixali boldwing          // North Shroud
-            439 => new MapLinkPayload(146, 23, 31.1f, 19.5f), // Zahar'ak pugilist       // Southern Thanalan
+            439 => new MapLinkPayload(146, 23, 31.1f, 18.5f), // Zahar'ak pugilist       // Southern Thanalan
             440 => new MapLinkPayload(138, 18, 13.9f, 15.5f), // axolotl                 // Western La Noscea
             441 => new MapLinkPayload(156, 25, 31.0f, 5.6f), // hapalit                 // Mor Dhona
-            442 => new MapLinkPayload(180, 30, 23.9f, 7.7f), // elite quarryman         // Outer La Noscea
+            442 => new MapLinkPayload(180, 30, 23.2f, 8.8f), // elite quarryman         // Outer La Noscea
             443 => new MapLinkPayload(155, 53, 33.9f, 21.6f), // Natalan swiftbeak       // Coerthas Central Highlands
             444 => new MapLinkPayload(152, 5, 23.8f, 14.6f), // violet sigh             // East Shroud
             445 => new MapLinkPayload(137, 17, 29.5f, 20.8f), // 2nd Cohort signifer     // Eastern La Noscea

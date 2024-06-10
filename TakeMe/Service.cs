@@ -30,11 +30,13 @@ public class Service
     [PluginService] public static ITextureProvider TextureProvider { get; private set; }
     [PluginService] public static IDataManager Data { get; private set; }
     [PluginService] public static ICondition Condition { get; private set; }
+    [PluginService] public static IFramework Framework { get; private set; }
 #nullable enable
 
-    public static void Init() {
+    public static void Init(Plugin p) {
         Config = PluginInterface.GetPluginConfig() as Configuration ?? new Configuration();
         IPC = new();
+        Plugin = p;
     }
 
     public static T? ExcelRow<T>(uint rowid) where T: ExcelRow => Data.GetExcelSheet<T>()?.GetRow(rowid);
