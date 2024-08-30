@@ -1,14 +1,14 @@
-﻿using System;
+using Dalamud.Configuration;
+using Lumina.Excel.GeneratedSheets;
+using System;
 using System.Collections.Generic;
 using System.ComponentModel;
 using System.Numerics;
-using Dalamud.Configuration;
-using Dalamud.Plugin;
-using Lumina.Excel.GeneratedSheets;
 
 namespace TakeMe;
 
-public enum OverlayBehavior : uint {
+public enum OverlayBehavior : uint
+{
     [Description("Manually")]
     Manual = 0,
     [Description("When near aetheryte")]
@@ -18,13 +18,17 @@ public enum OverlayBehavior : uint {
 }
 
 [Serializable]
-public class Waypoint {
+public class Waypoint
+{
     public required uint Zone;
     public required Vector3 Position;
     public required string Label;
+    public required uint Icon;
+    public required int SortOrder;
 }
 
-public static class WaypointExtensions {
+public static class WaypointExtensions
+{
     public static TerritoryType? TerritoryType(this Waypoint wp) => Service.ExcelRow<TerritoryType>(wp.Zone);
 }
 
@@ -35,13 +39,15 @@ public class Configuration : IPluginConfiguration
 
     public OverlayBehavior OverlayBehavior = OverlayBehavior.Manual;
     public List<Waypoint> Waypoints = [];
+    public List<Waypoint> Aetherytes = [];
 
     public void Save()
     {
         Service.PluginInterface.SavePluginConfig(this);
     }
 
-    public void Update(Action<Configuration> func) {
+    public void Update(Action<Configuration> func)
+    {
         func(this);
     }
 }

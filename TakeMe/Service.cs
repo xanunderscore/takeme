@@ -10,14 +10,14 @@ namespace TakeMe;
 
 public class Service
 {
-    public static PlayerCharacter? Player => ClientState.LocalPlayer;
+    public static IPlayerCharacter? Player => ClientState.LocalPlayer;
 
 #nullable disable
     public static Plugin Plugin { get; private set; }
     public static Configuration Config { get; private set; }
     public static IPC IPC { get; private set; }
 
-    [PluginService] public static DalamudPluginInterface PluginInterface { get; private set; }
+    [PluginService] public static IDalamudPluginInterface PluginInterface { get; private set; }
     [PluginService] public static ICommandManager CommandManager { get; private set; }
     [PluginService] public static IToastGui Toast { get; private set; }
     [PluginService] public static ISigScanner SigScanner { get; private set; }
@@ -31,13 +31,15 @@ public class Service
     [PluginService] public static IDataManager Data { get; private set; }
     [PluginService] public static ICondition Condition { get; private set; }
     [PluginService] public static IFramework Framework { get; private set; }
+    [PluginService] public static IGameInteropProvider Hook { get; private set; }
 #nullable enable
 
-    public static void Init(Plugin p) {
+    public static void Init(Plugin p)
+    {
         Config = PluginInterface.GetPluginConfig() as Configuration ?? new Configuration();
         IPC = new();
         Plugin = p;
     }
 
-    public static T? ExcelRow<T>(uint rowid) where T: ExcelRow => Data.GetExcelSheet<T>()?.GetRow(rowid);
+    public static T? ExcelRow<T>(uint rowid) where T : ExcelRow => Data.GetExcelSheet<T>()?.GetRow(rowid);
 }

@@ -2,7 +2,6 @@
     "version": "2.0.0",
     "tasks": [
         {
-            "type": "msbuild",
             "problemMatcher": ["$msCompile"],
             "group": "build",
             "label": "Build: solution",
@@ -15,7 +14,7 @@
             "args": [
                 "build",
                 "${workspaceFolder}/TakeMe/TakeMe.csproj",
-                "/property:GenerateFullPaths=true",
+                "/property:Platform=x64",
                 "/consoleloggerparameters:NoSummary;ForceNoAlign"
             ],
             "problemMatcher": "$msCompile",

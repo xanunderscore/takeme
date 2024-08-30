@@ -2,8 +2,10 @@ using Dalamud.Interface;
 using Dalamud.Interface.Components;
 using Dalamud.Interface.Windowing;
 using ImGuiNET;
+using Lumina.Excel.GeneratedSheets;
 using System;
 using System.ComponentModel;
+using System.Linq;
 using System.Numerics;
 using System.Reflection;
 
@@ -20,13 +22,18 @@ public class ConfigWindow : Window
         };
     }
 
-    public override void Draw()
+    public unsafe override void Draw()
     {
         if (ImGui.BeginTabBar("config_tabs"))
         {
             if (ImGui.BeginTabItem("Waypoints"))
             {
                 DrawWaypoints();
+                ImGui.EndTabItem();
+            }
+            if (ImGui.BeginTabItem("Aetherytes"))
+            {
+                DrawAetherytes();
                 ImGui.EndTabItem();
             }
             if (ImGui.BeginTabItem("Settings"))
@@ -65,7 +72,9 @@ public class ConfigWindow : Window
                 {
                     Zone = zone,
                     Position = pos,
-                    Label = label
+                    Label = label,
+                    Icon = 0,
+                    SortOrder = -1
                 });
             }
         }
@@ -124,6 +133,35 @@ public class ConfigWindow : Window
         }
 
         ImGui.EndTable();
+    }
+
+    private static void DrawAetherytes()
+    {
+        foreach (var aetheryteObj in Service.ObjectTable.Where(x => x.ObjectKind == Dalamud.Game.ClientState.Objects.Enums.ObjectKind.Aetheryte))
+        {
+            var aetheryte = Service.Data.GetExcelSheet<Aetheryte>()?.GetRow(aetheryteObj.DataId);
+            if (aetheryte == null)
+                continue;
+
+            if (Service.Config.Aetherytes.Any(x => x.Position == aetheryteObj.Position && x.Zone == Service.ClientState.TerritoryType))
+                continue;
+
+            var isMaster = aetheryte.PlaceName.Row > 0;
+
+            ImGui.Text($"{aetheryte.AethernetName.Value!.Name}");
+            ImGui.SameLine();
+            if (ImGuiComponents.IconButton($"###save{aetheryteObj.GameObjectId}", FontAwesomeIcon.Save))
+            {
+                Service.Config.Aetherytes.Add(new Waypoint
+                {
+                    Zone = Service.ClientState.TerritoryType,
+                    Position = aetheryteObj.Position,
+                    Label = aetheryte.AethernetName.Value!.Name,
+                    Icon = isMaster ? 60453u : 60430u,
+                    SortOrder = (int)aetheryteObj.DataId
+                });
+            }
+        }
     }
 
     private static string EnumString<T>(T v) where T : Enum =>

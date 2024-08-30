@@ -1,7 +1,6 @@
 using Dalamud.Game.ClientState.Conditions;
 using Dalamud.Game.Command;
 using Dalamud.Interface.Windowing;
-using Dalamud.IoC;
 using Dalamud.Plugin;
 using Dalamud.Plugin.Services;
 using FFXIVClientStructs.FFXIV.Client.Game;
@@ -12,7 +11,7 @@ using System.Numerics;
 
 namespace TakeMe;
 
-public sealed class Plugin : IDalamudPlugin
+public sealed unsafe class Plugin : IDalamudPlugin
 {
     public static string Name => "takeme";
 
@@ -27,25 +26,26 @@ public sealed class Plugin : IDalamudPlugin
     private static readonly List<(string, string)> HelpCommands =
     [
         ("new <name>", "Create a new waypoint at your current location called <name>"),
-        ("newtarget <name>", "Create a new waypoint at your current target's location called <name>"),
+        ("newtarget <name>?", "Create a new waypoint at your current target's location called <name> - if no name provided, uses target's nameplate"),
         ("<waypoint>", "Go to the specified waypoint"),
         ("[target|mob] <name>", "Move to the nearest enemy/NPC called <name>"),
         ("quest", "Go to quest objective"),
         ("[c|cfg|config]", "Open configuration window")
     ];
 
-    public Plugin([RequiredVersion("1.0")] DalamudPluginInterface pluginInterface)
+    public Plugin(IDalamudPluginInterface pluginInterface)
     {
         pluginInterface.Create<Service>();
         Service.Init(this);
+        Service.Hook.InitializeFromAttributes(this);
 
-        var helpmess = "Open configuration\n";
+        var helpmessage = "Open configuration\n";
         foreach ((var args, var desc) in HelpCommands)
-            helpmess += $"/{Name} {args} → {desc}\n";
+            helpmessage += $"/{Name} {args} → {desc}\n";
 
         Camera.Instance = new();
 
-        Service.CommandManager.AddHandler(CommandName, new CommandInfo(OnCommand) { HelpMessage = helpmess });
+        Service.CommandManager.AddHandler(CommandName, new CommandInfo(OnCommand) { HelpMessage = helpmessage });
         configWindow = new ConfigWindow();
         overlayWindow = new Overlay();
 
@@ -81,9 +81,7 @@ public sealed class Plugin : IDalamudPlugin
             (var dest, var forceFly) = nextDest;
             var playerPos = Service.Player!.Position;
 
-            var wantMount = forceFly || Vector3.Distance(dest, playerPos) > 20f;
-
-            if (wantMount && WaitMount())
+            if (Vector3.Distance(dest, playerPos) > 20f && !forceFly && WaitMount())
                 return;
 
             nextDestination.Dequeue();
@@ -95,6 +93,9 @@ public sealed class Plugin : IDalamudPlugin
                     dest,
                     Service.Condition[ConditionFlag.InFlight] || Service.Condition[ConditionFlag.Jumping] || forceFly
                 );
+
+            if (forceFly)
+                WaitMount();
         }
     }
 
@@ -121,7 +122,9 @@ public sealed class Plugin : IDalamudPlugin
 
     private void OnCommand(string command, string args)
     {
-        var arguments = args.Split(" ", 2);
+        var arguments = args.Split(" ", 2).ToList();
+        if (arguments.Count == 1)
+            arguments.Add("");
 
         switch (arguments[0])
         {
@@ -142,7 +145,7 @@ public sealed class Plugin : IDalamudPlugin
                 NewWaypointFromTarget(arguments[1]);
                 break;
             case "":
-                overlayWindow.IsOpen = true;
+                overlayWindow.IsOpen = !overlayWindow.IsOpen;
                 break;
             case "cancel":
                 Service.IPC.PathfindCancel();
@@ -193,6 +196,12 @@ public sealed class Plugin : IDalamudPlugin
         if (Service.Player is null)
             return;
 
+        if (label == "")
+        {
+            Service.Toast.ShowError("Waypoint name required.");
+            return;
+        }
+
         if (Service.Config.Waypoints.Any(x => x.Label == label && x.Zone == Service.ClientState.TerritoryType))
         {
             Service.Toast.ShowError("You already have a waypoint with that name.");
@@ -207,7 +216,9 @@ public sealed class Plugin : IDalamudPlugin
                 {
                     Zone = Service.ClientState.TerritoryType,
                     Position = Service.Player.Position,
-                    Label = label
+                    Label = label,
+                    Icon = 0,
+                    SortOrder = -1
                 }
             );
     }
@@ -223,6 +234,9 @@ public sealed class Plugin : IDalamudPlugin
             return;
         }
 
+        if (label == "")
+            label = Service.TargetManager.Target.Name.ToString();
+
         if (Service.Config.Waypoints.Any(x => x.Label == label && x.Zone == Service.ClientState.TerritoryType))
         {
             Service.Toast.ShowError("You already have a waypoint with that name.");
@@ -237,7 +251,9 @@ public sealed class Plugin : IDalamudPlugin
                 {
                     Zone = Service.ClientState.TerritoryType,
                     Position = Service.TargetManager.Target.Position,
-                    Label = label
+                    Label = label,
+                    Icon = 0,
+                    SortOrder = -1
                 }
             );
     }

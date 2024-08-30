@@ -12,7 +12,7 @@ namespace TakeMe;
 
 internal class Zodiac
 {
-    private unsafe RelicNote Book => Service.ExcelRow<RelicNote>(Manager->RelicNoteID)!;
+    private unsafe RelicNote Book => Service.ExcelRow<RelicNote>(Manager->RelicNoteId)!;
     private static unsafe Ui.RelicNote* Manager => Ui.RelicNote.Instance();
 
     public unsafe bool Active
@@ -193,7 +193,7 @@ internal class Zodiac
             616 => new MapLinkPayload(152, 5, 32.0f, 14.0f), // Breaking Dawn              // East Shroud
             620 => new MapLinkPayload(152, 5, 23.0f, 14.0f), // Everything's Better        // East Shroud
             628 => new MapLinkPayload(153, 6, 32.0f, 25.0f), // What Gored Before          // South Shroud
-            632 => new MapLinkPayload(154, 7, 21.0f, 19.0f), // Rude Awakening             // North Shroud
+            632 => new MapLinkPayload(154, 7, 22.5f, 20.1f), // Rude Awakening             // North Shroud
             633 => new MapLinkPayload(154, 7, 19.0f, 20.0f), // Air Supply                 // North Shroud
             642 => new MapLinkPayload(147, 24, 21.0f, 29.0f), // The Ceruleum Road          // Northern Thanalan
 #pragma warning restore format
