@@ -1,5 +1,5 @@
 using Dalamud.Configuration;
-using Lumina.Excel.GeneratedSheets;
+using Lumina.Excel.Sheets;
 using System;
 using System.Collections.Generic;
 using System.ComponentModel;
@@ -29,7 +29,7 @@ public class Waypoint
 
 public static class WaypointExtensions
 {
-    public static TerritoryType? TerritoryType(this Waypoint wp) => Service.ExcelRow<TerritoryType>(wp.Zone);
+    public static TerritoryType TerritoryType(this Waypoint wp) => Service.ExcelRow<TerritoryType>(wp.Zone);
 }
 
 [Serializable]

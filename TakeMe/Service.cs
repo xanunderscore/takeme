@@ -41,5 +41,5 @@ public class Service
         Plugin = p;
     }
 
-    public static T? ExcelRow<T>(uint rowid) where T : ExcelRow => Data.GetExcelSheet<T>()?.GetRow(rowid);
+    public static T ExcelRow<T>(uint rowid) where T : struct, IExcelRow<T> => Data.Excel.GetSheet<T>().GetRow(rowid);
 }

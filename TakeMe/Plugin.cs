@@ -1,9 +1,10 @@
-using Dalamud.Game.ClientState.Conditions;
+﻿using Dalamud.Game.ClientState.Conditions;
 using Dalamud.Game.Command;
 using Dalamud.Interface.Windowing;
 using Dalamud.Plugin;
 using Dalamud.Plugin.Services;
 using FFXIVClientStructs.FFXIV.Client.Game;
+using FFXIVClientStructs.FFXIV.Client.Game.Fate;
 using System;
 using System.Collections.Generic;
 using System.Linq;
@@ -20,8 +21,11 @@ public sealed unsafe class Plugin : IDalamudPlugin
     public readonly WindowSystem WindowSystem = new("TakeMe");
     private readonly ConfigWindow configWindow;
     private readonly Overlay overlayWindow;
-    private readonly Queue<(Vector3 destination, bool fly)> nextDestination = [];
+    private readonly Queue<Destination> nextDestination = [];
     private Vector3? highlightDestination = null;
+    private uint DestinationFateId;
+
+    public record struct Destination(Vector3 Point, bool Fly, uint FateId = 0);
 
     private static readonly List<(string, string)> HelpCommands =
     [
@@ -76,15 +80,29 @@ public sealed unsafe class Plugin : IDalamudPlugin
 
     private void Tick(IFramework framework)
     {
+        if (DestinationFateId > 0)
+        {
+            var fate = FateManager.Instance();
+            if (fate->CurrentFate != null && fate->CurrentFate->FateId == DestinationFateId && Service.IPC.PathActive)
+            {
+                Service.IPC.PathfindCancel();
+                DestinationFateId = 0;
+            }
+        }
+
         if (nextDestination.TryPeek(out var nextDest))
         {
-            (var dest, var forceFly) = nextDest;
+            var nd = nextDest;
+            var dest = nd.Point;
+            var forceFly = nd.Fly;
             var playerPos = Service.Player!.Position;
 
             if (Vector3.Distance(dest, playerPos) > 20f && !forceFly && WaitMount())
                 return;
 
             nextDestination.Dequeue();
+
+            DestinationFateId = nd.FateId;
 
             Service.Log.Debug($"pathfind from {playerPos} -> {dest}");
             Service
@@ -115,9 +133,9 @@ public sealed unsafe class Plugin : IDalamudPlugin
         return true;
     }
 
-    internal void Goto(Vector3 destination, bool forceFly = false)
+    internal void Goto(Vector3 destination, bool forceFly = false, uint fateId = 0)
     {
-        nextDestination.Enqueue((destination, forceFly));
+        nextDestination.Enqueue(new(destination, forceFly, fateId));
     }
 
     private void OnCommand(string command, string args)

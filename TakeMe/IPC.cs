@@ -6,12 +6,15 @@ namespace TakeMe;
 
 public class IPC
 {
-    private ICallGateSubscriber<Vector3, bool, bool> _pathfindAndMoveTo;
-    private ICallGateSubscriber<object> _pathStop;
-    private ICallGateSubscriber<object> _pathfindCancel;
-    private ICallGateSubscriber<Vector3, bool, float, Vector3?> _pointOnFloor;
-    private ICallGateSubscriber<float> _pathTolerance;
-    private ICallGateSubscriber<List<Vector3>> _pathWaypoints;
+    private readonly ICallGateSubscriber<Vector3, bool, bool> _pathfindAndMoveTo;
+    private readonly ICallGateSubscriber<object> _pathStop;
+    private readonly ICallGateSubscriber<object> _pathfindCancel;
+    private readonly ICallGateSubscriber<Vector3, bool, float, Vector3?> _pointOnFloor;
+    private readonly ICallGateSubscriber<float> _pathTolerance;
+    private readonly ICallGateSubscriber<List<Vector3>> _pathWaypoints;
+    private readonly ICallGateSubscriber<bool> _pathfindInProgress;
+    private readonly ICallGateSubscriber<int> _pathfindNumQueued;
+    private readonly ICallGateSubscriber<bool> _pathIsRunning;
 
     public IPC()
     {
@@ -21,6 +24,9 @@ public class IPC
         _pointOnFloor = Service.PluginInterface.GetIpcSubscriber<Vector3, bool, float, Vector3?>("vnavmesh.Query.Mesh.PointOnFloor");
         _pathTolerance = Service.PluginInterface.GetIpcSubscriber<float>("vnavmesh.Path.GetTolerance");
         _pathWaypoints = Service.PluginInterface.GetIpcSubscriber<List<Vector3>>("vnavmesh.Path.ListWaypoints");
+        _pathfindInProgress = Service.PluginInterface.GetIpcSubscriber<bool>("vnavmesh.Nav.PathfindInProgress");
+        _pathfindNumQueued = Service.PluginInterface.GetIpcSubscriber<int>("vnavmesh.Nav.PathfindNumQueued");
+        _pathIsRunning = Service.PluginInterface.GetIpcSubscriber<bool>("vnavmesh.Path.IsRunning");
     }
 
     public void PathfindCancel() => _pathfindCancel.InvokeAction();
@@ -32,4 +38,5 @@ public class IPC
     public float PathTolerance => _pathTolerance.InvokeFunc();
     public List<Vector3> PathWaypoints => _pathWaypoints.InvokeFunc();
     public Vector3? PointOnFloor(Vector3 center, bool allowUnlandable, float radius) => _pointOnFloor.InvokeFunc(center, allowUnlandable, radius);
+    public bool PathActive => _pathfindInProgress.InvokeFunc() || _pathfindNumQueued.InvokeFunc() > 0 || _pathIsRunning.InvokeFunc();
 }

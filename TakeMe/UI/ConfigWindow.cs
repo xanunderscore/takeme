@@ -2,7 +2,7 @@ using Dalamud.Interface;
 using Dalamud.Interface.Components;
 using Dalamud.Interface.Windowing;
 using ImGuiNET;
-using Lumina.Excel.GeneratedSheets;
+using Lumina.Excel.Sheets;
 using System;
 using System.ComponentModel;
 using System.Linq;
@@ -101,7 +101,7 @@ public class ConfigWindow : Window
             }
 
             ImGui.TableNextColumn();
-            ImGui.TextUnformatted(wp.TerritoryType()?.PlaceName?.Value?.Name ?? "(unknown)");
+            ImGui.TextUnformatted(wp.TerritoryType().PlaceName.Value.Name.ExtractText());
 
             ImGui.TableNextColumn();
             var pos = wp.Position;
@@ -139,14 +139,12 @@ public class ConfigWindow : Window
     {
         foreach (var aetheryteObj in Service.ObjectTable.Where(x => x.ObjectKind == Dalamud.Game.ClientState.Objects.Enums.ObjectKind.Aetheryte))
         {
-            var aetheryte = Service.Data.GetExcelSheet<Aetheryte>()?.GetRow(aetheryteObj.DataId);
-            if (aetheryte == null)
-                continue;
+            var aetheryte = Service.Data.GetExcelSheet<Aetheryte>().GetRow(aetheryteObj.DataId);
 
             if (Service.Config.Aetherytes.Any(x => x.Position == aetheryteObj.Position && x.Zone == Service.ClientState.TerritoryType))
                 continue;
 
-            var isMaster = aetheryte.PlaceName.Row > 0;
+            var isMaster = aetheryte.PlaceName.RowId > 0;
 
             ImGui.Text($"{aetheryte.AethernetName.Value!.Name}");
             ImGui.SameLine();
@@ -156,7 +154,7 @@ public class ConfigWindow : Window
                 {
                     Zone = Service.ClientState.TerritoryType,
                     Position = aetheryteObj.Position,
-                    Label = aetheryte.AethernetName.Value!.Name,
+                    Label = aetheryte.AethernetName.Value.Name.ExtractText(),
                     Icon = isMaster ? 60453u : 60430u,
                     SortOrder = (int)aetheryteObj.DataId
                 });

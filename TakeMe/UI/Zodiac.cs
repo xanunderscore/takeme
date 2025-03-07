@@ -2,7 +2,7 @@ using Dalamud.Game.Text.SeStringHandling.Payloads;
 using Dalamud.Interface;
 using Dalamud.Interface.Components;
 using ImGuiNET;
-using Lumina.Excel.GeneratedSheets;
+using Lumina.Excel.Sheets;
 using System;
 using System.Collections.Generic;
 using System.Linq;
@@ -12,14 +12,14 @@ namespace TakeMe;
 
 internal class Zodiac
 {
-    private unsafe RelicNote Book => Service.ExcelRow<RelicNote>(Manager->RelicNoteId)!;
+    private unsafe RelicNote Book => Service.ExcelRow<RelicNote>(Manager->RelicNoteId);
     private static unsafe Ui.RelicNote* Manager => Ui.RelicNote.Instance();
 
     public unsafe bool Active
     {
         get
         {
-            if (Book.UnkData25[0].Fate == 0)
+            if (Book.Fate[0].RowId == 0)
                 return false;
             for (var i = 0; i < 10; i++)
                 if (Manager->MonsterProgress[i] != 3)
@@ -59,7 +59,7 @@ internal class Zodiac
             else
             {
                 if (!headerShown)
-                    ImGui.TextDisabled(Service.ExcelRow<TerritoryType>(key)?.PlaceName.Value?.Name ?? "<unknown>");
+                    ImGui.TextDisabled(Service.ExcelRow<TerritoryType>(key).PlaceName.Value.Name.ExtractText());
                 headerShown = true;
             }
             if (j.Icon > 0)
@@ -91,27 +91,25 @@ internal class Zodiac
         List<Objective> objectives = [];
 
         var i = 0;
-        foreach (var notefate in Book.UnkData25)
+        foreach (var notefate in Book.Fate)
         {
-            if (notefate.Fate == 0) continue;
-            var fate = Service.ExcelRow<Fate>(notefate.Fate)!;
+            var fate = notefate.Value;
             objectives.Add(
                 new Objective()
                 {
-                    Location = GetFatePosition(notefate.Fate),
+                    Location = GetFatePosition(fate.RowId),
                     Type = "FATE",
-                    Name = fate.Name,
+                    Name = fate.Name.ExtractText(),
                     Complete = Manager->IsFateComplete(i++),
-                    Icon = fate.IconMap
+                    Icon = fate.MapIcon
                 }
             );
         }
 
         i = 0;
-        foreach (var mon in Book.UnkData1)
+        foreach (var mon in Book.MonsterNoteTargetCommon)
         {
-            if (mon.MonsterNoteTargetCommon == 0) continue;
-            var monster = Service.ExcelRow<MonsterNoteTarget>(mon.MonsterNoteTargetCommon);
+            var monster = mon.Value;
             objectives.Add(
                 new Objective()
                 {
@@ -152,7 +150,7 @@ internal class Zodiac
             objectives.Add(
                 new Objective()
                 {
-                    Location = GetLevePosition(leve.Row),
+                    Location = GetLevePosition(leve.RowId),
                     Type = "Leve",
                     Name = name,
                     Complete = Manager->IsLeveComplete(i++),

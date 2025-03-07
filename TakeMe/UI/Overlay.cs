@@ -5,15 +5,17 @@ using Dalamud.Interface.Windowing;
 using Dalamud.Utility;
 using FFXIVClientStructs.FFXIV.Client.Game.Fate;
 using FFXIVClientStructs.FFXIV.Client.Game.UI;
+using FFXIVClientStructs.FFXIV.Client.System.String;
 using FFXIVClientStructs.FFXIV.Client.UI.Agent;
 using FFXIVClientStructs.Interop;
 using ImGuiNET;
-using Lumina.Excel.GeneratedSheets;
+using Lumina.Excel.Sheets;
 using System;
 using System.Collections.Generic;
 using System.Collections.ObjectModel;
 using System.Linq;
 using System.Numerics;
+using System.Runtime.InteropServices;
 
 namespace TakeMe;
 
@@ -23,6 +25,7 @@ public class Overlay : Window
     {
         public Vector3 Reported;
         public Vector3? Actual;
+        public uint FateId = 0;
 
         public static Destination FromPoint(Vector3 point) => new()
         {
@@ -35,9 +38,6 @@ public class Overlay : Window
     private readonly ReadOnlyDictionary<ushort, byte> _territoryToAetherCurrentCompFlgSet;
     public bool PosDebug { get; set; }
 
-    private const ushort BozjaZone = 920;
-    private const ushort ZadnorZone = 975;
-
     private static IPlayerCharacter Player => Service.Player!;
     private static Vector3 PlayerPos => Player.Position;
     private static Vector2 PlayerPosXZ => new(PlayerPos.X, PlayerPos.Z);
@@ -47,25 +47,31 @@ public class Overlay : Window
     {
         zod = new();
         _territoryToAetherCurrentCompFlgSet = Service.Data.GetExcelSheet<TerritoryType>()!
-            .Where(x => x.RowId > 0 && x.Unknown32 > 0)
-            .ToDictionary(x => (ushort)x.RowId, x => x.Unknown32)
+            .Where(x => x.RowId > 0 && x.Unknown4 > 0)
+            .ToDictionary(x => (ushort)x.RowId, x => x.Unknown4)
             .AsReadOnly();
         IsOpen = true;
     }
 
-    private static readonly List<(string Name, Vector3 Position)> bozjaAetherytes = [
-        ("Utya's Aegis", new(-201.95f, 5.02f, 846.95f)),
-        ("Olana's Stand", new(486.78f, 34.93f, 531.33f)),
-        ("Lunya's Stand", new(-257.95f, 35.93f, 534.36f)),
-        ("Camp Steva", new(169.79f, 2.95f, 192.28f))
-    ];
-
-    private static readonly List<(string Name, Vector3 Position)> zadnorAetherytes = [
-        ("Camp Vrdelnis", new(679.68f, 297.29f, 660.03f)),
-        ("Zuprtik Point", new(-356.47f, 286.03f, 758.45f)),
-        ("Ljeban Point", new(-689.39f, 276.54f, -292.16f)),
-        ("Hrmovir Point", new(106.37f, 300.95f, -130.82f))
-    ];
+    private static readonly Dictionary<ushort, List<(string Name, Vector3 Position)>> aetheryteInstances = new() {
+        [827] = [
+            ("Central Point", new(-67.971f, 523.221f, -877.421f)),
+            ("Unverified Research", new(-588.405f, 505.294f, -154.458f)),
+            ("The Dormitory", new(779.350f, 512.196f, -421.698f))
+        ],
+        [920] = [
+            ("Utya's Aegis", new(-201.95f, 5.02f, 846.95f)),
+            ("Olana's Stand", new(486.78f, 34.93f, 531.33f)),
+            ("Lunya's Stand", new(-257.95f, 35.93f, 534.36f)),
+            ("Camp Steva", new(169.79f, 2.95f, 192.28f))
+        ],
+        [975] = [
+            ("Camp Vrdelnis", new(679.68f, 297.29f, 660.03f)),
+            ("Zuprtik Point", new(-356.47f, 286.03f, 758.45f)),
+            ("Ljeban Point", new(-689.39f, 276.54f, -292.16f)),
+            ("Hrmovir Point", new(106.37f, 300.95f, -130.82f))
+        ]
+    };
 
     private static IEnumerable<Waypoint> WaypointsCurrentZone =>
         Service.Config.Waypoints.Where(x => x.Zone == Service.ClientState.TerritoryType);
@@ -73,7 +79,7 @@ public class Overlay : Window
     private static IEnumerable<Waypoint> AetherytesCurrentZone =>
         Service.Config.Aetherytes.Where(x => x.Zone == Service.ClientState.TerritoryType);
 
-    private unsafe Span<Pointer<FateContext>> FatesCurrentZone => FateManager.Instance()->Fates.AsSpan();
+    private unsafe Pointer<FateContext>[] FatesCurrentZone => FateManager.Instance()->Fates.AsEnumerable().Select(p => (Pointer<FateContext>)(FateContext*)p.Value).ToArray();
 
     private static readonly HashSet<uint> ImportantQuestIcons = [
         60490, // msq highlighted area
@@ -132,7 +138,7 @@ public class Overlay : Window
             var items = new List<MapMarkerData>();
             var hd = AgentHUD.Instance();
 
-            // Null pointer exception on this line
+            /*
             foreach (var d in hd->MapMarkers.AsSpan())
             {
                 if (ImportantQuestIcons.Contains(d.IconId))
@@ -140,6 +146,7 @@ public class Overlay : Window
                 else if (!UnimportantQuestIcons.Contains(d.IconId))
                     items.Add(d);
             }
+            */
 
             return items;
         }
@@ -182,7 +189,7 @@ public class Overlay : Window
             || zod.Active
             || FlagCurrentZone != null
             || GatheringMarkers.Any()
-            || Service.ClientState.TerritoryType is BozjaZone or ZadnorZone;
+            || aetheryteInstances.ContainsKey(Service.ClientState.TerritoryType);
     }
 
     public override unsafe void Draw()
@@ -204,7 +211,7 @@ public class Overlay : Window
         if (FlagCurrentZone is { } flag)
         {
             var flagpos = new Vector2(flag.XFloat, flag.YFloat);
-            var map = Service.ExcelRow<Lumina.Excel.GeneratedSheets.Map>(flag.MapId)!;
+            var map = Service.ExcelRow<Lumina.Excel.Sheets.Map>(flag.MapId)!;
             var flagMapPos = MapUtil.WorldToMap(flagpos, map.OffsetX, map.OffsetY, map.SizeFactor);
             var yceiling = Service.ClientState.TerritoryType == 1192 ? 135f : 1024f;
             Utils.Icon(60561, new(32, 32));
@@ -243,9 +250,8 @@ public class Overlay : Window
             ImGui.TreePop();
         }
 
-        if (tt is BozjaZone or ZadnorZone && ImGui.TreeNodeEx("Aetherytes", ImGuiTreeNodeFlags.DefaultOpen))
+        if (aetheryteInstances.TryGetValue(tt, out var aetherytes) && ImGui.TreeNodeEx("Aetherytes", ImGuiTreeNodeFlags.DefaultOpen))
         {
-            var aetherytes = tt == BozjaZone ? bozjaAetherytes : zadnorAetherytes;
             foreach (var ae in aetherytes)
             {
                 Utils.Icon(60959, new(32, 32));
@@ -281,12 +287,15 @@ public class Overlay : Window
                 var fateDuration = new TimeSpan(0, 0, fate.Value->Duration);
                 var fateTimeRemaining = fate.Value->StartTimeEpoch == 0 ? ""
                     : $", {fateDuration - (dt - DateTimeOffset.FromUnixTimeSeconds(fate.Value->StartTimeEpoch)):mm\\:ss}";
-                // FIXME MapIconId
-                Utils.Icon(*(uint*)((IntPtr)fate.Value + 988), new(32, 32));
+                Utils.Icon(fate.Value->MapIconId, new(32, 32));
                 ImGui.Text($"Lv. {fate.Value->Level} {fate.Value->Name} ({fate.Value->Progress}%%{fateTimeRemaining})");
                 ImGui.SameLine();
                 DrawDistanceFromPlayer(fate.Value->Location);
-                DrawGoButtons($"###fate{fate.Value->FateId}", () => GetPoint(fate.Value));
+                DrawGoButtons($"###fate{fate.Value->FateId}", () => {
+                    var dest = GetPoint(fate.Value);
+                    dest.FateId = fate.Value->FateId;
+                    return dest;
+                });
             }
             ImGui.TreePop();
         }
@@ -317,15 +326,15 @@ public class Overlay : Window
         var tt = Service.ClientState.TerritoryType;
         var ps = PlayerState.Instance();
         return ps != null &&
-            _territoryToAetherCurrentCompFlgSet.TryGetValue(tt, out byte accfs) &&
+            _territoryToAetherCurrentCompFlgSet.TryGetValue(tt, out var accfs) &&
             ps->IsAetherCurrentZoneComplete(accfs);
     }
 
     private static float RawPosToMapCoordinate(int pos, float scale, short offset)
     {
-        float num = scale / 100f;
-        float num2 = (float)pos / 1000f;
-        float num3 = (num2 + (float)offset) * num;
+        var num = scale / 100f;
+        var num2 = (float)pos / 1000f;
+        var num3 = (num2 + (float)offset) * num;
         return 41f / num * ((num3 + 1024f) / 2048f) + 1f;
     }
 
@@ -374,7 +383,7 @@ public class Overlay : Window
         {
             var d = destination();
             if (d.Actual != null)
-                Service.Plugin.Goto(d.Actual.Value);
+                Service.Plugin.Goto(d.Actual.Value, false, d.FateId);
         }
 
         if (CanFlyCurrentZone())
@@ -385,7 +394,7 @@ public class Overlay : Window
             {
                 var d = destination();
                 if (d.Actual != null)
-                    Service.Plugin.Goto(d.Actual.Value, true);
+                    Service.Plugin.Goto(d.Actual.Value, true, d.FateId);
             }
         }
 
