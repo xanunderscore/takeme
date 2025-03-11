@@ -5,7 +5,6 @@ using Dalamud.Interface.Windowing;
 using Dalamud.Utility;
 using FFXIVClientStructs.FFXIV.Client.Game.Fate;
 using FFXIVClientStructs.FFXIV.Client.Game.UI;
-using FFXIVClientStructs.FFXIV.Client.System.String;
 using FFXIVClientStructs.FFXIV.Client.UI.Agent;
 using FFXIVClientStructs.Interop;
 using ImGuiNET;
@@ -15,7 +14,6 @@ using System.Collections.Generic;
 using System.Collections.ObjectModel;
 using System.Linq;
 using System.Numerics;
-using System.Runtime.InteropServices;
 
 namespace TakeMe;
 
@@ -53,7 +51,14 @@ public class Overlay : Window
         IsOpen = true;
     }
 
-    private static readonly Dictionary<ushort, List<(string Name, Vector3 Position)>> aetheryteInstances = new() {
+    private static readonly Dictionary<ushort, List<(string Name, Vector3 Position)>> aetheryteInstances = new()
+    {
+        [795] = [
+            ("Northpoint", new(-250.87f, 680.76f, 150.31f)),
+            ("The Dragon Star Observatory", new(127.90f, 753.61f, 792.42f)),
+            ("The Firing Chamber", new(126.28f, 660.15f, -199.00f)),
+            ("Carbonatite Quarry", new(-440.02f, 671.15f, -620.51f))
+        ],
         [827] = [
             ("Central Point", new(-67.971f, 523.221f, -877.421f)),
             ("Unverified Research", new(-588.405f, 505.294f, -154.458f)),
@@ -79,7 +84,7 @@ public class Overlay : Window
     private static IEnumerable<Waypoint> AetherytesCurrentZone =>
         Service.Config.Aetherytes.Where(x => x.Zone == Service.ClientState.TerritoryType);
 
-    private unsafe Pointer<FateContext>[] FatesCurrentZone => FateManager.Instance()->Fates.AsEnumerable().Select(p => (Pointer<FateContext>)(FateContext*)p.Value).ToArray();
+    private unsafe Pointer<FateContext>[] FatesCurrentZone => FateManager.Instance()->Fates.AsEnumerable().Select(p => (Pointer<FateContext>)p.Value).ToArray();
 
     private static readonly HashSet<uint> ImportantQuestIcons = [
         60490, // msq highlighted area
@@ -219,7 +224,15 @@ public class Overlay : Window
             ImGui.SameLine();
             DrawDistanceFromPlayerXZ(flagpos);
             if (Service.IPC.PointOnFloor(new(flag.XFloat, yceiling, flag.YFloat), true, 5) is { } walkable)
+            {
                 DrawGoButtons("###flag", () => Destination.FromPoint(walkable));
+                ImGui.SameLine();
+                if (ImGuiComponents.IconButton(FontAwesomeIcon.Crosshairs))
+                {
+                    Service.Plugin.Goto(walkable);
+                    AgentMap.Instance()->IsFlagMarkerSet = 0;
+                }
+            }
             else
                 ImGui.TextDisabled("(not walkable)");
         }
@@ -291,7 +304,8 @@ public class Overlay : Window
                 ImGui.Text($"Lv. {fate.Value->Level} {fate.Value->Name} ({fate.Value->Progress}%%{fateTimeRemaining})");
                 ImGui.SameLine();
                 DrawDistanceFromPlayer(fate.Value->Location);
-                DrawGoButtons($"###fate{fate.Value->FateId}", () => {
+                DrawGoButtons($"###fate{fate.Value->FateId}", () =>
+                {
                     var dest = GetPoint(fate.Value);
                     dest.FateId = fate.Value->FateId;
                     return dest;
@@ -318,6 +332,12 @@ public class Overlay : Window
         {
             zod.Draw();
             ImGui.TreePop();
+        }
+
+        if (ImGui.Button("Copy position"))
+        {
+            var p = Service.Player.Position;
+            ImGui.SetClipboardText($"new({p.X:f2}f, {p.Y:f2}f, {p.Z:f2}f)");
         }
     }
 

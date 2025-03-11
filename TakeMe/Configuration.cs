@@ -45,9 +45,4 @@ public class Configuration : IPluginConfiguration
     {
         Service.PluginInterface.SavePluginConfig(this);
     }
-
-    public void Update(Action<Configuration> func)
-    {
-        func(this);
-    }
 }

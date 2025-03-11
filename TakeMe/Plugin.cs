@@ -78,16 +78,17 @@ public sealed unsafe class Plugin : IDalamudPlugin
         Service.Config.Save();
     }
 
+    private static int GetCurrentFateId() {
+        var fm = FateManager.Instance();
+        return fm->CurrentFate != null ? fm->CurrentFate->FateId : 0;
+    }
+
     private void Tick(IFramework framework)
     {
-        if (DestinationFateId > 0)
+        if (DestinationFateId > 0 && GetCurrentFateId() == DestinationFateId && Service.IPC.PathActive)
         {
-            var fate = FateManager.Instance();
-            if (fate->CurrentFate != null && fate->CurrentFate->FateId == DestinationFateId && Service.IPC.PathActive)
-            {
-                Service.IPC.PathfindCancel();
-                DestinationFateId = 0;
-            }
+            Service.IPC.PathfindCancel();
+            DestinationFateId = 0;
         }
 
         if (nextDestination.TryPeek(out var nextDest))
@@ -103,6 +104,11 @@ public sealed unsafe class Plugin : IDalamudPlugin
             nextDestination.Dequeue();
 
             DestinationFateId = nd.FateId;
+            if (DestinationFateId > 0 && GetCurrentFateId() == DestinationFateId)
+            {
+                Service.Log.Debug($"already in fate {DestinationFateId}, nothing to do");
+                return;
+            }
 
             Service.Log.Debug($"pathfind from {playerPos} -> {dest}");
             Service
