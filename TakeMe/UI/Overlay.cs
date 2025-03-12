@@ -14,6 +14,7 @@ using System.Collections.Generic;
 using System.Collections.ObjectModel;
 using System.Linq;
 using System.Numerics;
+using FieldMarker = FFXIVClientStructs.FFXIV.Client.Game.UI.FieldMarker;
 
 namespace TakeMe;
 
@@ -85,6 +86,8 @@ public class Overlay : Window
         Service.Config.Aetherytes.Where(x => x.Zone == Service.ClientState.TerritoryType);
 
     private unsafe Pointer<FateContext>[] FatesCurrentZone => FateManager.Instance()->Fates.AsEnumerable().Select(p => (Pointer<FateContext>)p.Value).ToArray();
+
+    private unsafe Span<FieldMarker> WaymarksCurrentZone => MarkingController.Instance()->FieldMarkers;
 
     private static readonly HashSet<uint> ImportantQuestIcons = [
         60490, // msq highlighted area
@@ -334,11 +337,29 @@ public class Overlay : Window
             ImGui.TreePop();
         }
 
-        if (ImGui.Button("Copy position"))
-        {
-            var p = Service.Player.Position;
-            ImGui.SetClipboardText($"new({p.X:f2}f, {p.Y:f2}f, {p.Z:f2}f)");
-        }
+        if (WaymarksAny() && ImGui.TreeNodeEx("Waymarks"))
+            for(var i = 0; i < WaymarksCurrentZone.Length; i++)
+            {
+                var f = WaymarksCurrentZone[i];
+                var icon = WaymarkIcons[i];
+                if (f.Active)
+                {
+                    Utils.Icon(icon, new(32, 32));
+                    var pos = new Vector3(f.X / 1000f, f.Y / 1000f, f.Z / 1000f);
+                    DrawGoButtons($"###waymark{i}", () => Destination.FromPoint(pos));
+                }
+            }
+    }
+
+    private static readonly uint[] WaymarkIcons = [61241, 61242, 61243, 61247, 61244, 61245, 61246, 61248];
+
+    private bool WaymarksAny()
+    {
+        foreach(var w in WaymarksCurrentZone)
+            if (w.Active)
+                return true;
+
+        return false;
     }
 
     private unsafe bool CanFlyCurrentZone()
