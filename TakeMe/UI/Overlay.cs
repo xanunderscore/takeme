@@ -329,6 +329,7 @@ public class Overlay : Window
                 DrawDistanceFromPlayer(wp.Position);
                 DrawGoButtons($"###aetheryte{wp.Label}", () => Destination.FromPoint(wp.Position));
             }
+            ImGui.TreePop();
         }
 
         if (zod.Active && ImGui.TreeNodeEx("Zodiac", ImGuiTreeNodeFlags.DefaultOpen))
@@ -337,18 +338,27 @@ public class Overlay : Window
             ImGui.TreePop();
         }
 
-        if (WaymarksAny() && ImGui.TreeNodeEx("Waymarks"))
-            for(var i = 0; i < WaymarksCurrentZone.Length; i++)
+        var node = false;
+        for(var i = 0; i < WaymarksCurrentZone.Length; i++)
+        {
+            var f = WaymarksCurrentZone[i];
+            var icon = WaymarkIcons[i];
+            if (f.Active)
             {
-                var f = WaymarksCurrentZone[i];
-                var icon = WaymarkIcons[i];
-                if (f.Active)
+                if (!node)
+                    node = ImGui.TreeNodeEx("Waymarks");
+                if (node)
                 {
                     Utils.Icon(icon, new(32, 32));
                     var pos = new Vector3(f.X / 1000f, f.Y / 1000f, f.Z / 1000f);
                     DrawGoButtons($"###waymark{i}", () => Destination.FromPoint(pos));
+                } else {
+                    break;
                 }
             }
+        }
+        if (node)
+            ImGui.TreePop();
     }
 
     private static readonly uint[] WaymarkIcons = [61241, 61242, 61243, 61247, 61244, 61245, 61246, 61248];
