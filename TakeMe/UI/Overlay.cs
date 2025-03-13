@@ -18,7 +18,7 @@ using FieldMarker = FFXIVClientStructs.FFXIV.Client.Game.UI.FieldMarker;
 
 namespace TakeMe;
 
-public class Overlay : Window
+public unsafe class Overlay : Window
 {
     public class Destination
     {
@@ -40,6 +40,16 @@ public class Overlay : Window
     private static IPlayerCharacter Player => Service.Player!;
     private static Vector3 PlayerPos => Player.Position;
     private static Vector2 PlayerPosXZ => new(PlayerPos.X, PlayerPos.Z);
+
+    private FlagMapMarker? Flag;
+    private readonly List<Waypoint> SavedWaypoints = [];
+    private readonly List<Waypoint> SavedAetherytes = [];
+    private readonly List<MapMarkerData> MapMarkers = [];
+    private readonly List<Pointer<FateContext>> Fates = [];
+    private readonly FieldMarker[] Waymarks = new FieldMarker[8];
+    private readonly List<MiniMapGatheringMarker> GatherMarkers = [];
+
+    private bool ShouldDraw;
 
     public Overlay()
         : base("TakeMe Overlay")
@@ -79,16 +89,6 @@ public class Overlay : Window
         ]
     };
 
-    private static IEnumerable<Waypoint> WaypointsCurrentZone =>
-        Service.Config.Waypoints.Where(x => x.Zone == Service.ClientState.TerritoryType);
-
-    private static IEnumerable<Waypoint> AetherytesCurrentZone =>
-        Service.Config.Aetherytes.Where(x => x.Zone == Service.ClientState.TerritoryType);
-
-    private unsafe Pointer<FateContext>[] FatesCurrentZone => FateManager.Instance()->Fates.AsEnumerable().Select(p => (Pointer<FateContext>)p.Value).ToArray();
-
-    private unsafe Span<FieldMarker> WaymarksCurrentZone => MarkingController.Instance()->FieldMarkers;
-
     private static readonly HashSet<uint> ImportantQuestIcons = [
         60490, // msq highlighted area
         60494, // feature quest highlighted area
@@ -121,9 +121,11 @@ public class Overlay : Window
         71081, // guildhest
         63922, // moogle quest
         63933, // speech bubble
-        71006, // icon placed on npc that gives you a required status effect for a quest
+        71006, // icon placed on npc that gives you a required buff for a quest step
         63921, // sidequest icon shaped like a book? idk what this is
         60935, // firmament vendor icon
+
+        60970, // eureka stuff
         60959, 63913, 60412, 63909, 60489, // bozja stuff
         60758, 60769, 60770, 60771, 60772, 60773, 60774, 60776, 60789 // housing
     ];
@@ -139,68 +141,49 @@ public class Overlay : Window
         { 60491u, 71023u }
     };
 
-    private static unsafe IEnumerable<MapMarkerData> QuestObjectivesCurrentZone
+    public override void PreOpenCheck()
     {
-        get
+        ShouldDraw = false;
+
+        MapMarkers.Clear();
+        foreach (var marker in AgentHUD.Instance()->MapMarkers)
+            if (ImportantQuestIcons.Contains(marker.IconId))
+                MapMarkers.Add(marker);
+        ShouldDraw |= MapMarkers.Count > 0;
+
+        SavedWaypoints.Clear();
+        SavedWaypoints.AddRange(Service.Config.Waypoints.Where(x => x.Zone == Service.ClientState.TerritoryType));
+        ShouldDraw |= SavedWaypoints.Count > 0;
+
+        SavedAetherytes.Clear();
+        SavedAetherytes.AddRange(Service.Config.Aetherytes.Where(x => x.Zone == Service.ClientState.TerritoryType));
+        ShouldDraw |= SavedAetherytes.Count > 0;
+
+        Flag = null;
+        var map = AgentMap.Instance();
+        if (map != null && map->IsFlagMarkerSet != 0 && map->FlagMapMarker.TerritoryId == Service.ClientState.TerritoryType)
         {
-            var items = new List<MapMarkerData>();
-            var hd = AgentHUD.Instance();
-
-            /*
-            foreach (var d in hd->MapMarkers.AsSpan())
-            {
-                if (ImportantQuestIcons.Contains(d.IconId))
-                    items.Insert(0, d);
-                else if (!UnimportantQuestIcons.Contains(d.IconId))
-                    items.Add(d);
-            }
-            */
-
-            return items;
+            Flag = map->FlagMapMarker;
+            ShouldDraw = true;
         }
+
+        Fates.Clear();
+        Fates.AddRange(FateManager.Instance()->Fates.AsEnumerable());
+        ShouldDraw |= Fates.Count > 0;
+
+        // not setting ShouldDraw here as people usually set markers in raids and we don't want the overlay there
+        MarkingController.Instance()->FieldMarkers.CopyTo(Waymarks.AsSpan());
+
+        GatherMarkers.Clear();
+        foreach (var g in AgentMap.Instance()->MiniMapGatheringMarkers)
+            if (g.ShouldRender > 0)
+                GatherMarkers.Add(g);
+        ShouldDraw |= GatherMarkers.Count > 0;
+
+        ShouldDraw |= aetheryteInstances.ContainsKey(Service.ClientState.TerritoryType);
     }
 
-    private static unsafe FlagMapMarker? FlagCurrentZone
-    {
-        get
-        {
-            var m = AgentMap.Instance();
-            if (m == null || m->IsFlagMarkerSet == 0)
-                return null;
-
-            if (m->FlagMapMarker.TerritoryId != Service.ClientState.TerritoryType)
-                return null;
-
-            return m->FlagMapMarker;
-        }
-    }
-
-    private static IEnumerable<MiniMapGatheringMarker> GatheringMarkers
-    {
-        get
-        {
-            static unsafe MiniMapGatheringMarker[] g() { return AgentMap.Instance()->MiniMapGatheringMarkers.ToArray(); }
-
-            return g().Where(m => m.ShouldRender > 0);
-        }
-    }
-
-    public override bool DrawConditions()
-    {
-        if (Service.Player is null)
-            return false;
-
-        return QuestObjectivesCurrentZone.Any()
-            || WaypointsCurrentZone.Any()
-            || AetherytesCurrentZone.Any()
-            || FatesCurrentZone.Length > 0
-            || zod.Active
-            || FlagCurrentZone != null
-            || GatheringMarkers.Any()
-            || aetheryteInstances.ContainsKey(Service.ClientState.TerritoryType);
-    }
-
-    public override unsafe void Draw()
+    public override void Draw()
     {
         if (Service.Player is null)
             return;
@@ -210,127 +193,57 @@ public class Overlay : Window
         {
             ImGui.Text($"Pos: {PlayerPos}");
             ImGui.Text($"Floor (2y radius): {Service.IPC.PointOnFloor(PlayerPos, false, 2f)}"); ;
-            ImGui.Text($"Floor (2y radius, unlandable): {Service.IPC.PointOnFloor(PlayerPos, false, 2f)}");
+            ImGui.Text($"Floor (2y radius, unlandable): {Service.IPC.PointOnFloor(PlayerPos, true, 2f)}");
             var p = PlayerPos;
             p.Y += 15f;
             ImGui.Text($"Floor (2y radius, 15y vertical): {Service.IPC.PointOnFloor(p, false, 2f)}");
         }
 
-        if (FlagCurrentZone is { } flag)
+        if (Flag != null)
+            DrawFlag(Flag.Value);
+
+        DrawSection("Gathering markers", GatherMarkers, mark =>
         {
-            var flagpos = new Vector2(flag.XFloat, flag.YFloat);
-            var map = Service.ExcelRow<Lumina.Excel.Sheets.Map>(flag.MapId)!;
-            var flagMapPos = MapUtil.WorldToMap(flagpos, map.OffsetX, map.OffsetY, map.SizeFactor);
-            var yceiling = Service.ClientState.TerritoryType == 1192 ? 135f : 1024f;
-            Utils.Icon(60561, new(32, 32));
-            ImGui.Text($"{flagMapPos.X:0.0}, {flagMapPos.Y:0.0}");
+            Utils.Icon(mark.MapMarker.IconId, new(32, 32));
+            ImGui.Text($"{mark.TooltipText}");
+        }, ImGuiTreeNodeFlags.DefaultOpen);
+
+        DrawSection("Quests", MapMarkers.OrderBy(q => DistanceFromPlayer(q.Pos())), DrawQuest, ImGuiTreeNodeFlags.DefaultOpen);
+
+        var aetherytesHere = aetheryteInstances.TryGetValue(tt, out var i) ? i : Enumerable.Empty<(string Name, Vector3 Position)>();
+
+        DrawSection("Aetherytes", aetherytesHere, ae =>
+        {
+            Utils.Icon(60959, new(32, 32));
+            ImGui.Text(ae.Name);
             ImGui.SameLine();
-            DrawDistanceFromPlayerXZ(flagpos);
-            if (Service.IPC.PointOnFloor(new(flag.XFloat, yceiling, flag.YFloat), true, 5) is { } walkable)
-            {
-                DrawGoButtons("###flag", () => Destination.FromPoint(walkable));
-                ImGui.SameLine();
-                if (ImGuiComponents.IconButton(FontAwesomeIcon.Crosshairs))
-                {
-                    Service.Plugin.Goto(walkable);
-                    AgentMap.Instance()->IsFlagMarkerSet = 0;
-                }
-            }
-            else
-                ImGui.TextDisabled("(not walkable)");
-        }
+            DrawDistanceFromPlayer(ae.Position);
+            DrawGoButtons($"###ae{ae.Name}", () => Destination.FromPoint(ae.Position));
+        }, ImGuiTreeNodeFlags.DefaultOpen);
 
-        if (GatheringMarkers.Any() && ImGui.TreeNodeEx("Gathering markers", ImGuiTreeNodeFlags.DefaultOpen))
+        DrawSection("Waypoints", SavedWaypoints, wp =>
         {
-            foreach (var mark in GatheringMarkers)
-            {
-                Utils.Icon(mark.MapMarker.IconId, new(32, 32));
-                ImGui.Text($"{mark.TooltipText}");
-            }
+            if (wp.Icon > 0)
+                Utils.Icon(wp.Icon, new(32, 32));
 
-            ImGui.TreePop();
-        }
+            ImGui.Text(wp.Label);
+            ImGui.SameLine();
+            DrawDistanceFromPlayer(wp.Position);
+            DrawGoButtons($"###wp{wp.Label}", () => Destination.FromPoint(wp.Position));
+        }, ImGuiTreeNodeFlags.DefaultOpen);
 
-        if (QuestObjectivesCurrentZone.Any() && ImGui.TreeNodeEx("Quests", ImGuiTreeNodeFlags.DefaultOpen))
+        DrawSection("FATEs", Fates.ToArray().OrderBy(x => DistanceFromPlayer(x.Value->Location)), DrawFATE, ImGuiTreeNodeFlags.DefaultOpen);
+
+        DrawSection("Aethernet", SavedAetherytes.OrderBy(x => x.SortOrder), wp =>
         {
-            foreach (var objective in QuestObjectivesCurrentZone.OrderBy(q => DistanceFromPlayer(q.Pos())))
-            {
-                if (!IconRemap.TryGetValue(objective.IconId, out var iconId))
-                    iconId = objective.IconId;
-                Utils.Icon(iconId, new(32, 32));
-                ImGui.Text(objective.TooltipString->ToString());
-                ImGui.SameLine();
-                DrawDistanceFromPlayer(objective.Pos());
-                DrawGoButtons($"###quest{objective.LevelId}", () => GetPoint(new Vector3(objective.X, objective.Y, objective.Z)));
-            }
-            ImGui.TreePop();
-        }
+            if (wp.Icon > 0)
+                Utils.Icon(wp.Icon, new(32, 32));
 
-        if (aetheryteInstances.TryGetValue(tt, out var aetherytes) && ImGui.TreeNodeEx("Aetherytes", ImGuiTreeNodeFlags.DefaultOpen))
-        {
-            foreach (var ae in aetherytes)
-            {
-                Utils.Icon(60959, new(32, 32));
-                ImGui.Text(ae.Name);
-                ImGui.SameLine();
-                DrawDistanceFromPlayer(ae.Position);
-                DrawGoButtons($"###ae{ae.Name}", () => Destination.FromPoint(ae.Position));
-            }
-            ImGui.TreePop();
-        }
-
-        if (WaypointsCurrentZone.Any() && ImGui.TreeNodeEx("Waypoints", ImGuiTreeNodeFlags.DefaultOpen))
-        {
-            foreach (var wp in WaypointsCurrentZone)
-            {
-                if (wp.Icon > 0)
-                    Utils.Icon(wp.Icon, new(32, 32));
-
-                ImGui.Text(wp.Label);
-                ImGui.SameLine();
-                DrawDistanceFromPlayer(wp.Position);
-                DrawGoButtons($"###wp{wp.Label}", () => Destination.FromPoint(wp.Position));
-            }
-            ImGui.TreePop();
-        }
-
-        if (FatesCurrentZone.Length > 0 && ImGui.TreeNodeEx("FATEs", ImGuiTreeNodeFlags.DefaultOpen))
-        {
-            var dt = DateTime.Now;
-            var fates = FatesCurrentZone.ToArray();
-            foreach (var fate in fates.OrderBy(x => DistanceFromPlayer(x.Value->Location)))
-            {
-                var fateDuration = new TimeSpan(0, 0, fate.Value->Duration);
-                var fateTimeRemaining = fate.Value->StartTimeEpoch == 0 ? ""
-                    : $", {fateDuration - (dt - DateTimeOffset.FromUnixTimeSeconds(fate.Value->StartTimeEpoch)):mm\\:ss}";
-                Utils.Icon(fate.Value->MapIconId, new(32, 32));
-                ImGui.Text($"Lv. {fate.Value->Level} {fate.Value->Name} ({fate.Value->Progress}%%{fateTimeRemaining})");
-                ImGui.SameLine();
-                DrawDistanceFromPlayer(fate.Value->Location);
-                DrawGoButtons($"###fate{fate.Value->FateId}", () =>
-                {
-                    var dest = GetPoint(fate.Value);
-                    dest.FateId = fate.Value->FateId;
-                    return dest;
-                });
-            }
-            ImGui.TreePop();
-        }
-
-        if (AetherytesCurrentZone.Any() && ImGui.TreeNodeEx("Aetherytes"))
-        {
-            foreach (var wp in AetherytesCurrentZone.OrderBy(x => x.SortOrder))
-            {
-                if (wp.Icon > 0)
-                    Utils.Icon(wp.Icon, new(32, 32));
-
-                ImGui.Text(wp.Label);
-                ImGui.SameLine();
-                DrawDistanceFromPlayer(wp.Position);
-                DrawGoButtons($"###aetheryte{wp.Label}", () => Destination.FromPoint(wp.Position));
-            }
-            ImGui.TreePop();
-        }
+            ImGui.Text(wp.Label);
+            ImGui.SameLine();
+            DrawDistanceFromPlayer(wp.Position);
+            DrawGoButtons($"###aetheryte{wp.Label}", () => Destination.FromPoint(wp.Position));
+        });
 
         if (zod.Active && ImGui.TreeNodeEx("Zodiac", ImGuiTreeNodeFlags.DefaultOpen))
         {
@@ -338,47 +251,41 @@ public class Overlay : Window
             ImGui.TreePop();
         }
 
-        var node = false;
-        for(var i = 0; i < WaymarksCurrentZone.Length; i++)
+        DrawSection("Markers", Waymarks.Zip(WaymarkIcons).Where(t => t.First.Active), f =>
         {
-            var f = WaymarksCurrentZone[i];
-            var icon = WaymarkIcons[i];
-            if (f.Active)
-            {
-                if (!node)
-                    node = ImGui.TreeNodeEx("Waymarks");
-                if (node)
-                {
-                    Utils.Icon(icon, new(32, 32));
-                    var pos = new Vector3(f.X / 1000f, f.Y / 1000f, f.Z / 1000f);
-                    DrawGoButtons($"###waymark{i}", () => Destination.FromPoint(pos));
-                } else {
-                    break;
-                }
-            }
-        }
-        if (node)
-            ImGui.TreePop();
+            Utils.Icon(f.Second, new(32, 32));
+            ImGui.SameLine();
+            var pos = new Vector3(f.First.X / 1000f, f.First.Y / 1000f, f.First.Z / 1000f);
+            DrawDistanceFromPlayer(pos);
+            DrawGoButtons($"###waymark{i}", () => Destination.FromPoint(pos));
+        }, ImGuiTreeNodeFlags.DefaultOpen);
     }
 
     private static readonly uint[] WaymarkIcons = [61241, 61242, 61243, 61247, 61244, 61245, 61246, 61248];
 
-    private bool WaymarksAny()
-    {
-        foreach(var w in WaymarksCurrentZone)
-            if (w.Active)
-                return true;
-
-        return false;
-    }
-
-    private unsafe bool CanFlyCurrentZone()
+    private bool CanFlyCurrentZone()
     {
         var tt = Service.ClientState.TerritoryType;
         var ps = PlayerState.Instance();
         return ps != null &&
             _territoryToAetherCurrentCompFlgSet.TryGetValue(tt, out var accfs) &&
             ps->IsAetherCurrentZoneComplete(accfs);
+    }
+
+    private static void DrawSection<T>(string label, IEnumerable<T> items, Action<T> draw, ImGuiTreeNodeFlags flags = default)
+    {
+        var open = false;
+        foreach (var item in items)
+        {
+            if (!open)
+                open = ImGui.TreeNodeEx(label, flags);
+            if (!open)
+                break;
+
+            draw(item);
+        }
+        if (open)
+            ImGui.TreePop();
     }
 
     private static float RawPosToMapCoordinate(int pos, float scale, short offset)
@@ -389,7 +296,7 @@ public class Overlay : Window
         return 41f / num * ((num3 + 1024f) / 2048f) + 1f;
     }
 
-    private static unsafe Destination GetPoint(FateContext* fate)
+    private static Destination GetPoint(FateContext* fate)
     {
         var loc = fate->Location;
 
@@ -400,7 +307,7 @@ public class Overlay : Window
         return GetPoint(loc, 15f, fate->Radius / 3);
     }
 
-    private static unsafe Destination GetPoint(Vector3 worldPos, float extraHeight = 30f, float extraRadius = 0f)
+    private static Destination GetPoint(Vector3 worldPos, float extraHeight = 30f, float extraRadius = 0f)
     {
         var originalPos = new Vector3(worldPos.X, worldPos.Y, worldPos.Z);
         var target = Service.IPC.PointOnFloor(worldPos, false, 2f);
@@ -471,6 +378,62 @@ public class Overlay : Window
     {
         ImGui.TextDisabled($"{DistanceFromPlayerXZ(point):F1}y");
         ImGui.SameLine();
+    }
+
+    private void DrawFlag(FlagMapMarker flag)
+    {
+        var flagpos = new Vector2(flag.XFloat, flag.YFloat);
+        var map = Service.ExcelRow<Lumina.Excel.Sheets.Map>(flag.MapId)!;
+        var flagMapPos = MapUtil.WorldToMap(flagpos, map.OffsetX, map.OffsetY, map.SizeFactor);
+        var yceiling = Service.ClientState.TerritoryType == 1192 ? 135f : 1024f;
+        Utils.Icon(60561, new(32, 32));
+        ImGui.Text($"{flagMapPos.X:0.0}, {flagMapPos.Y:0.0}");
+        ImGui.SameLine();
+        DrawDistanceFromPlayerXZ(flagpos);
+        if (Service.IPC.PointOnFloor(new(flag.XFloat, yceiling, flag.YFloat), true, 5) is { } walkable)
+        {
+            DrawGoButtons("###flag", () => Destination.FromPoint(walkable));
+            ImGui.SameLine();
+            if (ImGuiComponents.IconButton(FontAwesomeIcon.Crosshairs))
+            {
+                Service.Plugin.Goto(walkable);
+                AgentMap.Instance()->IsFlagMarkerSet = 0;
+            }
+            if (ImGui.IsItemHovered())
+                ImGui.SetTooltip("Goto and clear flag");
+        }
+        else
+            ImGui.TextDisabled("(not walkable)");
+    }
+
+    private void DrawQuest(MapMarkerData objective)
+    {
+        if (!IconRemap.TryGetValue(objective.IconId, out var iconId))
+            iconId = objective.IconId;
+
+        Utils.Icon(iconId, new(32, 32));
+        ImGui.Text($"{objective.TooltipString->ToString()} ({iconId})");
+        ImGui.SameLine();
+        DrawDistanceFromPlayer(objective.Pos());
+        DrawGoButtons($"###quest{objective.LevelId}", () => GetPoint(new Vector3(objective.X, objective.Y, objective.Z)));
+    }
+
+    private void DrawFATE(Pointer<FateContext> fate)
+    {
+        var dt = DateTime.Now;
+        var fateDuration = new TimeSpan(0, 0, fate.Value->Duration);
+        var fateTimeRemaining = fate.Value->StartTimeEpoch == 0 ? ""
+            : $", {fateDuration - (dt - DateTimeOffset.FromUnixTimeSeconds(fate.Value->StartTimeEpoch)):mm\\:ss}";
+        Utils.Icon(fate.Value->MapIconId, new(32, 32));
+        ImGui.Text($"Lv. {fate.Value->Level} {fate.Value->Name} ({fate.Value->Progress}%%{fateTimeRemaining})");
+        ImGui.SameLine();
+        DrawDistanceFromPlayer(fate.Value->Location);
+        DrawGoButtons($"###fate{fate.Value->FateId}", () =>
+        {
+            var dest = GetPoint(fate.Value);
+            dest.FateId = fate.Value->FateId;
+            return dest;
+        });
     }
 }
 
