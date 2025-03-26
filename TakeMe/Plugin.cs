@@ -1,4 +1,4 @@
-﻿using Dalamud.Game.ClientState.Conditions;
+using Dalamud.Game.ClientState.Conditions;
 using Dalamud.Game.Command;
 using Dalamud.Interface.Windowing;
 using Dalamud.Plugin;
@@ -78,7 +78,8 @@ public sealed unsafe class Plugin : IDalamudPlugin
         Service.Config.Save();
     }
 
-    private static int GetCurrentFateId() {
+    private static int GetCurrentFateId()
+    {
         var fm = FateManager.Instance();
         return fm->CurrentFate != null ? fm->CurrentFate->FateId : 0;
     }
@@ -98,9 +99,6 @@ public sealed unsafe class Plugin : IDalamudPlugin
             var forceFly = nd.Fly;
             var playerPos = Service.Player!.Position;
 
-            if (Vector3.Distance(dest, playerPos) > 20f && !forceFly && WaitMount())
-                return;
-
             nextDestination.Dequeue();
 
             DestinationFateId = nd.FateId;
@@ -118,7 +116,7 @@ public sealed unsafe class Plugin : IDalamudPlugin
                     Service.Condition[ConditionFlag.InFlight] || Service.Condition[ConditionFlag.Jumping] || forceFly
                 );
 
-            if (forceFly)
+            if (Vector3.Distance(dest, playerPos) > 20f || forceFly)
                 WaitMount();
         }
     }

@@ -34,7 +34,7 @@ public unsafe class Overlay : Window
     }
 
     private readonly Zodiac zod;
-    private readonly ReadOnlyDictionary<ushort, byte> _territoryToAetherCurrentCompFlgSet;
+    private readonly ReadOnlyDictionary<ushort, uint> _territoryToAetherCurrentCompFlgSet;
     public bool PosDebug { get; set; }
 
     private static IPlayerCharacter Player => Service.Player!;
@@ -56,11 +56,13 @@ public unsafe class Overlay : Window
     {
         zod = new();
         _territoryToAetherCurrentCompFlgSet = Service.Data.GetExcelSheet<TerritoryType>()!
-            .Where(x => x.RowId > 0 && x.Unknown4 > 0)
-            .ToDictionary(x => (ushort)x.RowId, x => x.Unknown4)
+            .Where(x => x.AetherCurrentCompFlgSet.RowId >= 0)
+            .ToDictionary(x => (ushort)x.RowId, x => x.AetherCurrentCompFlgSet.RowId)
             .AsReadOnly();
         IsOpen = true;
     }
+
+    public override bool DrawConditions() => ShouldDraw;
 
     private static readonly Dictionary<ushort, List<(string Name, Vector3 Position)>> aetheryteInstances = new()
     {
@@ -71,9 +73,9 @@ public unsafe class Overlay : Window
             ("Carbonatite Quarry", new(-440.02f, 671.15f, -620.51f))
         ],
         [827] = [
-            ("Central Point", new(-67.971f, 523.221f, -877.421f)),
-            ("Unverified Research", new(-588.405f, 505.294f, -154.458f)),
-            ("The Dormitory", new(779.350f, 512.196f, -421.698f))
+            ("Central Point", new Vector3(-61.30f, 523.22f, -872.90f)),
+            ("Unverified Research", new Vector3(-585.81f, 505.51f, -151.93f)),
+            ("The Dormitory", new Vector3(778.22f, 512.20f, -418.36f))
         ],
         [920] = [
             ("Utya's Aegis", new(-201.95f, 5.02f, 846.95f)),
@@ -144,6 +146,8 @@ public unsafe class Overlay : Window
     public override void PreOpenCheck()
     {
         ShouldDraw = false;
+        if (Service.Player == null)
+            return;
 
         MapMarkers.Clear();
         foreach (var marker in AgentHUD.Instance()->MapMarkers)
@@ -161,7 +165,7 @@ public unsafe class Overlay : Window
 
         Flag = null;
         var map = AgentMap.Instance();
-        if (map != null && map->IsFlagMarkerSet != 0 && map->FlagMapMarker.TerritoryId == Service.ClientState.TerritoryType)
+        if (map != null && map->IsFlagMarkerSet && map->FlagMapMarker.TerritoryId == Service.ClientState.TerritoryType)
         {
             Flag = map->FlagMapMarker;
             ShouldDraw = true;
@@ -257,8 +261,14 @@ public unsafe class Overlay : Window
             ImGui.SameLine();
             var pos = new Vector3(f.First.X / 1000f, f.First.Y / 1000f, f.First.Z / 1000f);
             DrawDistanceFromPlayer(pos);
-            DrawGoButtons($"###waymark{i}", () => Destination.FromPoint(pos));
+            DrawGoButtons($"###waymark{f.Second}", () => Destination.FromPoint(pos));
         }, ImGuiTreeNodeFlags.DefaultOpen);
+
+        if (ImGui.Button("Copy location"))
+        {
+            var pos = Player.Position;
+            ImGui.SetClipboardText($"new Vector3({pos.X:f2}f, {pos.Y:f2}f, {pos.Z:f2}f)");
+        }
     }
 
     private static readonly uint[] WaymarkIcons = [61241, 61242, 61243, 61247, 61244, 61245, 61246, 61248];
@@ -397,7 +407,7 @@ public unsafe class Overlay : Window
             if (ImGuiComponents.IconButton(FontAwesomeIcon.Crosshairs))
             {
                 Service.Plugin.Goto(walkable);
-                AgentMap.Instance()->IsFlagMarkerSet = 0;
+                AgentMap.Instance()->IsFlagMarkerSet = false;
             }
             if (ImGui.IsItemHovered())
                 ImGui.SetTooltip("Goto and clear flag");
