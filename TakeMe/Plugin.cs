@@ -126,11 +126,17 @@ public sealed unsafe class Plugin : IDalamudPlugin
         if (Service.Condition[ConditionFlag.Mounted])
             return false;
 
-        if (Service.Condition[ConditionFlag.Casting] || Service.Condition[ConditionFlag.Unknown57])
-            return true; // wait for cast to end
+        // player is casting, wait
+        if (Service.Condition[ConditionFlag.Casting] || Service.Condition[ConditionFlag.MountOrOrnamentTransition])
+            return true;
 
+        // zone is still being initialized, wait
+        if (Service.ClientState.LocalPlayer?.IsTargetable == false)
+            return true;
+
+        // zone might not allow mounting - TODO we should check sheets instead
         if (ActionManager.Instance()->GetActionStatus(ActionType.GeneralAction, 9) != 0)
-            return false; // can't mount here
+            return false;
 
         ActionManager.Instance()->UseAction(ActionType.GeneralAction, 9);
 
