@@ -1,5 +1,4 @@
 using Dalamud.Game.ClientState.Objects.SubKinds;
-using Dalamud.Game.ClientState.Objects.Types;
 using Dalamud.Interface;
 using Dalamud.Interface.Components;
 using Dalamud.Interface.Utility.Raii;
@@ -51,13 +50,15 @@ public unsafe class Overlay : Window
     private StdVector<MapMarkerData> EventMarkers = [];
     private readonly List<Pointer<FateContext>> Fates = [];
     private readonly FieldMarker[] Waymarks = new FieldMarker[8];
-    private readonly List<IGameObject> Treasure = [];
+    private readonly Treasure Treasure = new();
     private readonly List<MiniMapGatheringMarker> GatherMarkers = [];
+
+    //private readonly Treasure _treasureTracker = new();
 
     private bool ShouldDraw;
 
     public Overlay()
-        : base("TakeMe Overlay")
+        : base("TakeMe Overlay", ImGuiWindowFlags.AlwaysAutoResize)
     {
         zod = new();
         _territoryToAetherCurrentCompFlgSet = Service.Data.GetExcelSheet<TerritoryType>()!
@@ -180,23 +181,13 @@ public unsafe class Overlay : Window
         EventMarkers.Clear();
         fixed (StdVector<MapMarkerData>* em = &EventMarkers)
             foreach (var dir in EventFramework.Instance()->DirectorModule.DirectorList)
-            {
-                // TODO remove when CS is updated, vfunc is offset by 1
-                var func = &dir.Value->VirtualTable->PopulateMapMarkers;
-                var off = (nint)func - (nint)dir.Value->VirtualTable;
-                if (off != 2176)
-                    throw new Exception($"ContentDirector->PopulateMapMarkers offset has been fixed, its now {off:X}, change da code");
-                func++;
-                (*func)(dir.Value, Service.ClientState.TerritoryType, em);
-            }
+                dir.Value->PopulateMapMarkers(Service.ClientState.TerritoryType, em);
         ShouldDraw |= EventMarkers.Count > 0;
 
         // not setting ShouldDraw here as people usually set markers in raids and we don't want the overlay there
         MarkingController.Instance()->FieldMarkers.CopyTo(Waymarks.AsSpan());
 
-        Treasure.Clear();
-        Treasure.AddRange(Service.ObjectTable.Where(o => o.ObjectKind == Dalamud.Game.ClientState.Objects.Enums.ObjectKind.Treasure && o.IsTargetable));
-        ShouldDraw |= Treasure.Count > 0;
+        ShouldDraw |= Treasure.HaveChests;
 
         GatherMarkers.Clear();
         foreach (var g in AgentMap.Instance()->MiniMapGatheringMarkers)
@@ -258,7 +249,7 @@ public unsafe class Overlay : Window
 
         DrawSection("Events", EventMarkers, DrawEventMarker, ImGuiTreeNodeFlags.DefaultOpen);
 
-        DrawSection("Treasure", Treasure.OrderBy(x => DistanceFromPlayer(x.Position)), t =>
+        DrawSection("Treasure", Treasure.Chests.OrderBy(x => DistanceFromPlayer(x.Position)), t =>
         {
             (string, uint) treasureInfo = t.DataId switch
             {

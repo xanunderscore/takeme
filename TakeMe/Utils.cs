@@ -4,8 +4,22 @@ using System.Numerics;
 
 namespace TakeMe;
 
-internal class Utils
+internal static unsafe class Utils
 {
+    private static readonly unsafe delegate* unmanaged<void*, byte> _automoveOff;
+    private static readonly void* _instPMC;
+
+    static Utils()
+    {
+        _automoveOff = (delegate* unmanaged<void*, byte>)Service.SigScanner.ScanText("80 B9 ?? ?? ?? ?? 01 76");
+        _instPMC = (void*)Service.SigScanner.GetStaticAddressFromSig("48 8D 0D ?? ?? ?? ?? F3 0F 10 45");
+    }
+
+    public static void AutomoveOff()
+    {
+        _automoveOff(_instPMC);
+    }
+
     public static void Icon(uint iconId, Vector2 size)
     {
         try

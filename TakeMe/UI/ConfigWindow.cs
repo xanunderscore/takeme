@@ -22,7 +22,7 @@ public class ConfigWindow : Window
         };
     }
 
-    public unsafe override void Draw()
+    public override unsafe void Draw()
     {
         if (ImGui.BeginTabBar("config_tabs"))
         {

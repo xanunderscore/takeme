@@ -109,6 +109,7 @@ public sealed unsafe class Plugin : IDalamudPlugin
             }
 
             Service.Log.Debug($"pathfind from {playerPos} -> {dest}");
+            Utils.AutomoveOff();
             Service
                 .IPC
                 .PathfindAndMoveTo(
