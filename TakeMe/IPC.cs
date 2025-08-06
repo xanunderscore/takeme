@@ -6,7 +6,7 @@ namespace TakeMe;
 
 public class IPC
 {
-    private readonly ICallGateSubscriber<Vector3, bool, bool> _pathfindAndMoveTo;
+    private readonly ICallGateSubscriber<Vector3, bool, float, bool> _pathfindAndMoveTo;
     private readonly ICallGateSubscriber<object> _pathStop;
     private readonly ICallGateSubscriber<object> _pathfindCancel;
     private readonly ICallGateSubscriber<Vector3, bool, float, Vector3?> _pointOnFloor;
@@ -18,7 +18,7 @@ public class IPC
 
     public IPC()
     {
-        _pathfindAndMoveTo = Service.PluginInterface.GetIpcSubscriber<Vector3, bool, bool>("vnavmesh.SimpleMove.PathfindAndMoveTo");
+        _pathfindAndMoveTo = Service.PluginInterface.GetIpcSubscriber<Vector3, bool, float, bool>("vnavmesh.SimpleMove.PathfindAndMoveCloseTo");
         _pathStop = Service.PluginInterface.GetIpcSubscriber<object>("vnavmesh.Path.Stop");
         _pathfindCancel = Service.PluginInterface.GetIpcSubscriber<object>("vnavmesh.Nav.PathfindCancelAll");
         _pointOnFloor = Service.PluginInterface.GetIpcSubscriber<Vector3, bool, float, Vector3?>("vnavmesh.Query.Mesh.PointOnFloor");
@@ -30,10 +30,10 @@ public class IPC
     }
 
     public void PathfindCancel() => _pathfindCancel.InvokeAction();
-    public bool PathfindAndMoveTo(Vector3 pos, bool fly)
+    public bool PathfindAndMoveTo(Vector3 pos, bool fly, float tolerance = 0)
     {
         _pathStop.InvokeAction();
-        return _pathfindAndMoveTo.InvokeFunc(pos, fly);
+        return _pathfindAndMoveTo.InvokeFunc(pos, fly, tolerance);
     }
     public float PathTolerance => _pathTolerance.InvokeFunc();
     public List<Vector3> PathWaypoints => _pathWaypoints.InvokeFunc();

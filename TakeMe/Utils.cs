@@ -1,5 +1,5 @@
+using Dalamud.Bindings.ImGui;
 using Dalamud.Interface.Textures.Internal;
-using ImGuiNET;
 using System.Numerics;
 
 namespace TakeMe;
@@ -27,7 +27,7 @@ internal static unsafe class Utils
             var icon = Service.TextureProvider.GetFromGameIcon(iconId)?.GetWrapOrEmpty();
             if (icon != null)
             {
-                ImGui.Image(icon.ImGuiHandle, size);
+                ImGui.Image(icon.Handle, size);
                 ImGui.SameLine();
             }
         }

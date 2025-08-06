@@ -1,3 +1,4 @@
+using Dalamud.Bindings.ImGui;
 using Dalamud.Game.ClientState.Objects.SubKinds;
 using Dalamud.Interface;
 using Dalamud.Interface.Components;
@@ -10,7 +11,6 @@ using FFXIVClientStructs.FFXIV.Client.Game.UI;
 using FFXIVClientStructs.FFXIV.Client.UI.Agent;
 using FFXIVClientStructs.Interop;
 using FFXIVClientStructs.STD;
-using ImGuiNET;
 using Lumina.Excel.Sheets;
 using System;
 using System.Collections.Generic;
@@ -23,19 +23,6 @@ namespace TakeMe;
 
 public unsafe class Overlay : Window
 {
-    public class Destination
-    {
-        public Vector3 Reported;
-        public Vector3? Actual;
-        public uint FateId = 0;
-
-        public static Destination FromPoint(Vector3 point) => new()
-        {
-            Reported = point,
-            Actual = point
-        };
-    }
-
     private readonly Zodiac zod;
     private readonly ReadOnlyDictionary<ushort, uint> _territoryToAetherCurrentCompFlgSet;
     public bool PosDebug { get; set; }
@@ -52,8 +39,7 @@ public unsafe class Overlay : Window
     private readonly FieldMarker[] Waymarks = new FieldMarker[8];
     private readonly Treasure Treasure = new();
     private readonly List<MiniMapGatheringMarker> GatherMarkers = [];
-
-    //private readonly Treasure _treasureTracker = new();
+    private readonly List<(Adventure, Vector3)> SightseeingLog = [];
 
     private bool ShouldDraw;
 
@@ -94,6 +80,13 @@ public unsafe class Overlay : Window
             ("Zuprtik Point", new(-356.47f, 286.03f, 758.45f)),
             ("Ljeban Point", new(-689.39f, 276.54f, -292.16f)),
             ("Hrmovir Point", new(106.37f, 300.95f, -130.82f))
+        ],
+        [1252] = [
+            ("Expedition Base Camp", new(830.75f, 72.98f, -695.98f)),
+            ("The Wanderer's Haven", new(-173.02f, 8.19f, -611.14f)),
+            ("Crystallized Caverns", new(-358.14f, 101.98f, -120.96f)),
+            ("Eldergrowth", new(306.94f, 105.18f, 305.65f)),
+            ("Stonemarsh", new(-384.12f, 99.20f, 281.42f))
         ]
     };
 
@@ -168,9 +161,9 @@ public unsafe class Overlay : Window
 
         Flag = null;
         var map = AgentMap.Instance();
-        if (map != null && map->IsFlagMarkerSet && map->FlagMapMarker.TerritoryId == Service.ClientState.TerritoryType)
+        if (map != null && map->FlagMarkerCount == 1 && map->FlagMapMarkers[0].TerritoryId == Service.ClientState.TerritoryType)
         {
-            Flag = map->FlagMapMarker;
+            Flag = map->FlagMapMarkers[0];
             ShouldDraw = true;
         }
 
@@ -231,7 +224,7 @@ public unsafe class Overlay : Window
             ImGui.Text(ae.Name);
             ImGui.SameLine();
             DrawDistanceFromPlayer(ae.Position);
-            DrawGoButtons(() => Destination.FromPoint(ae.Position));
+            DrawGoButtons(() => Destination.FromPoint(ae.Position).WithTolerance(4.5f));
         }, ImGuiTreeNodeFlags.DefaultOpen);
 
         DrawSection("Waypoints", SavedWaypoints, wp =>
@@ -264,7 +257,7 @@ public unsafe class Overlay : Window
             ImGui.TextUnformatted($"{treasureInfo.Item1} (0x{t.DataId:X})");
             ImGui.SameLine();
             DrawDistanceFromPlayer(t.Position);
-            DrawGoButtons(() => Destination.FromPoint(t.Position));
+            DrawGoButtons(() => Destination.FromPoint(t.Position).WithTolerance(2.6f));
         });
 
         DrawSection("Aethernet", SavedAetherytes.OrderBy(x => x.SortOrder), wp =>
@@ -275,7 +268,7 @@ public unsafe class Overlay : Window
             ImGui.Text(wp.Label);
             ImGui.SameLine();
             DrawDistanceFromPlayer(wp.Position);
-            DrawGoButtons(() => Destination.FromPoint(wp.Position));
+            DrawGoButtons(() => Destination.FromPoint(wp.Position).WithTolerance(11));
         });
 
         if (zod.Active && ImGui.TreeNodeEx("Zodiac", ImGuiTreeNodeFlags.DefaultOpen))
@@ -293,12 +286,29 @@ public unsafe class Overlay : Window
             DrawGoButtons(() => Destination.FromPoint(pos));
         }, ImGuiTreeNodeFlags.DefaultOpen);
 
-        if (ImGui.Button("Copy location"))
+        DrawSection("Sightseeing log", SightseeingLog.OrderBy(s => DistanceFromPlayer(s.Item2)), (a) =>
         {
-            var pos = Player.Position;
-            ImGui.SetClipboardText($"new Vector3({pos.X:f2}f, {pos.Y:f2}f, {pos.Z:f2}f)");
+            var (adv, pos) = a;
+            Utils.Icon((uint)adv.IconList, new(32, 32));
+            ImGui.SameLine();
+            ImGui.TextUnformatted(adv.Name.ToString());
+            ImGui.SameLine();
+            DrawDistanceFromPlayer(pos);
+            DrawGoButtons(() => Destination.FromPoint(pos));
+        });
+
+        if (ImGui.Button("Copy location"))
+            CopyVec(Player.Position);
+        ImGui.SameLine();
+        var t = Service.TargetManager.Target;
+        using (ImRaii.Disabled(t == null))
+        {
+            if (ImGui.Button("Copy target location") && t != null)
+                CopyVec(t.Position);
         }
     }
+
+    private static void CopyVec(Vector3 pos) => ImGui.SetClipboardText($"new Vector3({pos.X:f2}f, {pos.Y:f2}f, {pos.Z:f2}f)");
 
     private static readonly uint[] WaymarkIcons = [61241, 61242, 61243, 61247, 61244, 61245, 61246, 61248];
 
@@ -367,34 +377,26 @@ public unsafe class Overlay : Window
         }
 
         if (target == null)
-            Service.Log.Error($"No point on floor near {worldPos} with radius {Math.Max(extraRadius, 2f)}");
+            throw new ArgumentException($"No point on floor near {worldPos} with radius {Math.Max(extraRadius, 2f)}");
 
         return new()
         {
-            Reported = originalPos,
-            Actual = target
+            Requested = originalPos,
+            Reachable = target.Value
         };
     }
 
     public void DrawGoButtons(Func<Destination> destination)
     {
         if (ImGuiComponents.IconButton("walk", FontAwesomeIcon.Walking))
-        {
-            var d = destination();
-            if (d.Actual != null)
-                Service.Plugin.Goto(d.Actual.Value, false, d.FateId);
-        }
+            Service.Plugin.Goto(destination().Walking());
 
         if (CanFlyCurrentZone())
         {
             ImGui.SameLine();
 
             if (ImGuiComponents.IconButton("fly", FontAwesomeIcon.Plane))
-            {
-                var d = destination();
-                if (d.Actual != null)
-                    Service.Plugin.Goto(d.Actual.Value, true, d.FateId);
-            }
+                Service.Plugin.Goto(destination().Flying());
         }
 
         ImGui.SameLine();
@@ -402,7 +404,7 @@ public unsafe class Overlay : Window
         if (ImGuiComponents.IconButton("help", FontAwesomeIcon.InfoCircle))
         {
             var d = destination();
-            Service.Plugin.HighlightDestination(d.Reported);
+            Service.Plugin.HighlightDestination(d.Requested);
         }
     }
 
@@ -438,7 +440,7 @@ public unsafe class Overlay : Window
             if (ImGuiComponents.IconButton(FontAwesomeIcon.Crosshairs))
             {
                 Service.Plugin.Goto(walkable);
-                AgentMap.Instance()->IsFlagMarkerSet = false;
+                AgentMap.Instance()->FlagMarkerCount = 0;
             }
             if (ImGui.IsItemHovered())
                 ImGui.SetTooltip("Goto and clear flag");
@@ -447,7 +449,7 @@ public unsafe class Overlay : Window
             ImGui.TextDisabled("(not walkable)");
         ImGui.SameLine();
         if (ImGuiComponents.IconButton(FontAwesomeIcon.WindowClose))
-            AgentMap.Instance()->IsFlagMarkerSet = false;
+            AgentMap.Instance()->FlagMarkerCount = 0;
     }
 
     private void DrawEventMarker(MapMarkerData objective)
@@ -469,7 +471,7 @@ public unsafe class Overlay : Window
         var fateTimeRemaining = fate.Value->StartTimeEpoch == 0 ? ""
             : $", {fateDuration - (dt - DateTimeOffset.FromUnixTimeSeconds(fate.Value->StartTimeEpoch)):mm\\:ss}";
         Utils.Icon(fate.Value->MapIconId, new(32, 32));
-        ImGui.Text($"Lv. {fate.Value->Level} {fate.Value->Name} ({fate.Value->Progress}%%{fateTimeRemaining})");
+        ImGui.TextUnformatted($"Lv. {fate.Value->Level} {fate.Value->Name} ({fate.Value->Progress}%{fateTimeRemaining})");
         if (ImGui.IsItemHovered())
             ImGui.SetTooltip($"0x{(nint)fate.Value:X}");
         if (ImGui.IsItemClicked())
@@ -477,12 +479,7 @@ public unsafe class Overlay : Window
         ImGui.SameLine();
 
         DrawDistanceFromPlayer(fate.Value->Location);
-        DrawGoButtons(() =>
-        {
-            var dest = GetPoint(fate.Value);
-            dest.FateId = fate.Value->FateId;
-            return dest;
-        });
+        DrawGoButtons(() => GetPoint(fate.Value) with { FateId = fate.Value->FateId });
     }
 }
 

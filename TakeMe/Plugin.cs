@@ -12,6 +12,15 @@ using System.Numerics;
 
 namespace TakeMe;
 
+public record struct Destination(Vector3 Reachable, Vector3 Requested, bool Fly, float Tolerance = 0, uint FateId = 0)
+{
+    public static Destination FromPoint(Vector3 pt) => new(pt, pt, false);
+
+    public Destination Flying() => this with { Fly = true };
+    public Destination Walking() => this with { Fly = false };
+    public Destination WithTolerance(float t) => this with { Tolerance = t };
+}
+
 public sealed unsafe class Plugin : IDalamudPlugin
 {
     public static string Name => "takeme";
@@ -24,8 +33,6 @@ public sealed unsafe class Plugin : IDalamudPlugin
     private readonly Queue<Destination> nextDestination = [];
     private Vector3? highlightDestination = null;
     private uint DestinationFateId;
-
-    public record struct Destination(Vector3 Point, bool Fly, uint FateId = 0);
 
     private static readonly List<(string, string)> HelpCommands =
     [
@@ -57,14 +64,8 @@ public sealed unsafe class Plugin : IDalamudPlugin
         WindowSystem.AddWindow(overlayWindow);
 
         pluginInterface.UiBuilder.Draw += DrawUI;
-        pluginInterface.UiBuilder.OpenConfigUi += () =>
-        {
-            configWindow.IsOpen = true;
-        };
-        pluginInterface.UiBuilder.OpenMainUi += () =>
-        {
-            overlayWindow.IsOpen = true;
-        };
+        pluginInterface.UiBuilder.OpenConfigUi += () => configWindow.IsOpen = true;
+        pluginInterface.UiBuilder.OpenMainUi += () => overlayWindow.IsOpen = true;
         Service.Framework.Update += Tick;
     }
 
@@ -92,14 +93,12 @@ public sealed unsafe class Plugin : IDalamudPlugin
             DestinationFateId = 0;
         }
 
-        if (nextDestination.TryPeek(out var nextDest))
+        if (nextDestination.TryDequeue(out var nextDest))
         {
             var nd = nextDest;
-            var dest = nd.Point;
+            var dest = nd.Reachable;
             var forceFly = nd.Fly;
             var playerPos = Service.Player!.Position;
-
-            nextDestination.Dequeue();
 
             DestinationFateId = nd.FateId;
             if (DestinationFateId > 0 && GetCurrentFateId() == DestinationFateId)
@@ -114,7 +113,8 @@ public sealed unsafe class Plugin : IDalamudPlugin
                 .IPC
                 .PathfindAndMoveTo(
                     dest,
-                    Service.Condition[ConditionFlag.InFlight] || Service.Condition[ConditionFlag.Jumping] || forceFly
+                    Service.Condition[ConditionFlag.InFlight] || Service.Condition[ConditionFlag.Jumping] || forceFly,
+                    nd.Tolerance
                 );
 
             if (Vector3.Distance(dest, playerPos) > 20f || forceFly)
@@ -144,10 +144,8 @@ public sealed unsafe class Plugin : IDalamudPlugin
         return true;
     }
 
-    internal void Goto(Vector3 destination, bool forceFly = false, uint fateId = 0)
-    {
-        nextDestination.Enqueue(new(destination, forceFly, fateId));
-    }
+    public void Goto(Destination d) => nextDestination.Enqueue(d);
+    public void Goto(Vector3 v) => Goto(new Destination(v, v, false));
 
     private void OnCommand(string command, string args)
     {
