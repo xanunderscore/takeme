@@ -1,4 +1,4 @@
-using Dalamud.Game.ClientState.Conditions;
+﻿using Dalamud.Game.ClientState.Conditions;
 using Dalamud.Game.Command;
 using Dalamud.Interface.Windowing;
 using Dalamud.Plugin;
@@ -87,7 +87,8 @@ public sealed unsafe class Plugin : IDalamudPlugin
 
     private void Tick(IFramework framework)
     {
-        if (DestinationFateId > 0 && GetCurrentFateId() == DestinationFateId && Service.IPC.PathActive)
+        // stop moving once we hit fate edge in foray zones
+        if (DestinationFateId > 0 && GetCurrentFateId() == DestinationFateId && Service.IPC.PathActive && Service.ExcelRow<Lumina.Excel.Sheets.TerritoryType>(Service.ClientState.TerritoryType).TerritoryIntendedUse.RowId is 41 or 48)
         {
             Service.IPC.PathfindCancel();
             DestinationFateId = 0;
@@ -132,7 +133,7 @@ public sealed unsafe class Plugin : IDalamudPlugin
             return true;
 
         // zone is still being initialized, wait
-        if (Service.ClientState.LocalPlayer?.IsTargetable == false)
+        if (Service.ObjectTable.LocalPlayer?.IsTargetable == false)
             return true;
 
         // zone might not allow mounting - TODO we should check sheets instead

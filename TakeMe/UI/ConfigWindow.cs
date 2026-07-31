@@ -139,7 +139,7 @@ public class ConfigWindow : Window
     {
         foreach (var aetheryteObj in Service.ObjectTable.Where(x => x.ObjectKind == Dalamud.Game.ClientState.Objects.Enums.ObjectKind.Aetheryte))
         {
-            var aetheryte = Service.Data.GetExcelSheet<Aetheryte>().GetRow(aetheryteObj.DataId);
+            var aetheryte = Service.Data.GetExcelSheet<Aetheryte>().GetRow(aetheryteObj.BaseId);
 
             if (Service.Config.Aetherytes.Any(x => x.Position == aetheryteObj.Position && x.Zone == Service.ClientState.TerritoryType))
                 continue;
@@ -156,7 +156,7 @@ public class ConfigWindow : Window
                     Position = aetheryteObj.Position,
                     Label = aetheryte.AethernetName.Value.Name.ExtractText(),
                     Icon = isMaster ? 60453u : 60430u,
-                    SortOrder = (int)aetheryteObj.DataId
+                    SortOrder = (int)aetheryteObj.BaseId
                 });
             }
         }

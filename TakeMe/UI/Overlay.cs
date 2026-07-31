@@ -43,6 +43,8 @@ public unsafe class Overlay : Window
 
     private bool ShouldDraw;
 
+    private bool _canPathfind;
+
     public Overlay()
         : base("TakeMe Overlay", ImGuiWindowFlags.AlwaysAutoResize)
     {
@@ -87,6 +89,14 @@ public unsafe class Overlay : Window
             ("Crystallized Caverns", new(-358.14f, 101.98f, -120.96f)),
             ("Eldergrowth", new(306.94f, 105.18f, 305.65f)),
             ("Stonemarsh", new(-384.12f, 99.20f, 281.42f))
+        ],
+        [1346] = [
+            ("North Horn Base Camp", new(880, 258.5f, 880)),
+            ("The Crown of Karnak", new(451.651f, 70.38f, 528.804f)),
+            ("Sinking Sanctuary", new(357.63f, 44.894f, -554.251f)),
+            ("Suspended Masonry", new(-547.247f, 67.262f, 594.404f)),
+            ("Moldering Outskirts", new(-388.573f, 40.576f, -440.52f)),
+            ("Unhallowed Hamlet", new(-13.364f, 2.357f, -40.512f))
         ]
     };
 
@@ -151,6 +161,8 @@ public unsafe class Overlay : Window
         if (Service.Player == null)
             return;
 
+        _canPathfind = Service.IPC.IPCReady();
+
         SavedWaypoints.Clear();
         SavedWaypoints.AddRange(Service.Config.Waypoints.Where(x => x.Zone == Service.ClientState.TerritoryType));
         ShouldDraw |= SavedWaypoints.Count > 0;
@@ -174,7 +186,11 @@ public unsafe class Overlay : Window
         EventMarkers.Clear();
         fixed (StdVector<MapMarkerData>* em = &EventMarkers)
             foreach (var dir in EventFramework.Instance()->DirectorModule.DirectorList)
-                dir.Value->PopulateMapMarkers(Service.ClientState.TerritoryType, em);
+                dir.Value->PopulateMapMarkers((ushort)Service.ClientState.TerritoryType, em);
+
+        //var hud = AgentHUD.Instance();
+        //foreach (var m in hud->MapMarkers)
+        //    EventMarkers.AddCopy(m);
         ShouldDraw |= EventMarkers.Count > 0;
 
         // not setting ShouldDraw here as people usually set markers in raids and we don't want the overlay there
@@ -188,7 +204,7 @@ public unsafe class Overlay : Window
                 GatherMarkers.Add(g);
         ShouldDraw |= GatherMarkers.Count > 0;
 
-        ShouldDraw |= aetheryteInstances.ContainsKey(Service.ClientState.TerritoryType);
+        ShouldDraw |= aetheryteInstances.ContainsKey((ushort)Service.ClientState.TerritoryType);
     }
 
     public override void Draw()
@@ -196,8 +212,8 @@ public unsafe class Overlay : Window
         if (Service.Player is null)
             return;
 
-        var tt = Service.ClientState.TerritoryType;
-        if (PosDebug)
+        var tt = (ushort)Service.ClientState.TerritoryType;
+        if (PosDebug && _canPathfind)
         {
             ImGui.Text($"Pos: {PlayerPos}");
             ImGui.Text($"Floor (2y radius): {Service.IPC.PointOnFloor(PlayerPos, false, 2f)}"); ;
@@ -317,7 +333,7 @@ public unsafe class Overlay : Window
         var tt = Service.ClientState.TerritoryType;
         var ps = PlayerState.Instance();
         return ps != null &&
-            _territoryToAetherCurrentCompFlgSet.TryGetValue(tt, out var accfs) &&
+            _territoryToAetherCurrentCompFlgSet.TryGetValue((ushort)tt, out var accfs) &&
             ps->IsAetherCurrentZoneComplete(accfs);
     }
 

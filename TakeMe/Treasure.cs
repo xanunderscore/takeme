@@ -1,9 +1,9 @@
 using Dalamud.Plugin.Services;
-using FFXIVClientStructs.FFXIV.Client.Game.Object;
 using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Numerics;
+using FFXIV = FFXIVClientStructs.FFXIV.Client.Game.Object;
 
 namespace TakeMe;
 
@@ -30,7 +30,7 @@ public class Treasure : IDisposable
         GC.SuppressFinalize(this);
     }
 
-    private void OnTerritoryChange(ushort id)
+    private void OnTerritoryChange(uint id)
     {
         _chests.Clear();
     }
@@ -39,13 +39,12 @@ public class Treasure : IDisposable
     {
         foreach (var item in Service.ObjectTable.Where(t => t.ObjectKind == Dalamud.Game.ClientState.Objects.Enums.ObjectKind.Treasure))
         {
-            var obj = (GameObject*)item.Address;
-            var flags = *((byte*)obj + 0x1EC);
+            var obj = (FFXIV.Treasure*)item.Address;
 
-            if ((flags & 1) == 0)
-                _chests[item.GameObjectId] = new(item.GameObjectId, item.Position, item.DataId);
-            else
+            if (obj->Flags.HasFlag(FFXIV.Treasure.TreasureFlags.Opened))
                 _chests.Remove(item.GameObjectId);
+            else
+                _chests[item.GameObjectId] = new(item.GameObjectId, item.Position, item.BaseId);
         }
     }
 }

@@ -1,4 +1,5 @@
 using Dalamud.Plugin.Ipc;
+using Dalamud.Plugin.Ipc.Exceptions;
 using System.Collections.Generic;
 using System.Numerics;
 
@@ -39,4 +40,17 @@ public class IPC
     public List<Vector3> PathWaypoints => _pathWaypoints.InvokeFunc();
     public Vector3? PointOnFloor(Vector3 center, bool allowUnlandable, float radius) => _pointOnFloor.InvokeFunc(center, allowUnlandable, radius);
     public bool PathActive => _pathfindInProgress.InvokeFunc() || _pathfindNumQueued.InvokeFunc() > 0 || _pathIsRunning.InvokeFunc();
+
+    public bool IPCReady()
+    {
+        try
+        {
+            _pathfindInProgress.InvokeFunc();
+            return true;
+        }
+        catch (IpcNotReadyError)
+        {
+            return false;
+        }
+    }
 }

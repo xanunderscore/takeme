@@ -10,7 +10,7 @@ namespace TakeMe;
 
 public class Service
 {
-    public static IPlayerCharacter? Player => ClientState.LocalPlayer;
+    public static IPlayerCharacter? Player => ObjectTable.LocalPlayer;
 
 #nullable disable
     public static Plugin Plugin { get; private set; }
