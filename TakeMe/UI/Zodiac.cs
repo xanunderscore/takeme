@@ -56,12 +56,16 @@ internal class Zodiac
         {
             if (j.Complete)
                 continue;
-            else
+
+            if (!headerShown)
             {
-                if (!headerShown)
-                    ImGui.TextDisabled(Service.ExcelRow<TerritoryType>(key).PlaceName.Value.Name.ExtractText());
-                headerShown = true;
+                var tt = Service.ExcelRow<TerritoryType>(key);
+                if (tt.ContentFinderCondition.RowId > 0)
+                    ImGui.TextDisabled(tt.ContentFinderCondition.Value.Name.ExtractText());
+                else
+                    ImGui.TextDisabled(tt.PlaceName.Value.Name.ExtractText());
             }
+            headerShown = true;
             if (j.Icon > 0)
                 Utils.Icon(j.Icon, new(32, 32));
             ImGui.Text(j.Name);
